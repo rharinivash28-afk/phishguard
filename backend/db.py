@@ -137,4 +137,32 @@ class IncidentReport(Base):
 
 
 def init_db() -> None:
-    Base.metadata.create_all(engine)
+    """Bring the schema up to date.
+
+    Postgres (prod): run Alembic migrations to ``head``. SQLite (dev / tests):
+    just ``create_all`` — fast, and the dev DB is disposable.
+    """
+    if _is_sqlite:
+        Base.metadata.create_all(engine)
+        return
+
+    import os
+
+    from alembic import command
+    from alembic.config import Config
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    cfg = Config(os.path.join(here, "alembic.ini"))
+    cfg.set_main_option("script_location", os.path.join(here, "migrations"))
+    cfg.set_main_option("sqlalchemy.url", DATABASE_URL.replace("%", "%%"))
+
+    # If the DB already has our tables but no alembic_version (the pre-migrations
+    # deploy), stamp the baseline so upgrade() doesn't try to re-create them.
+    from sqlalchemy import inspect
+
+    insp = inspect(engine)
+    tables = set(insp.get_table_names())
+    if "sessions" in tables and "alembic_version" not in tables:
+        command.stamp(cfg, "base")
+        command.stamp(cfg, "db677a4ee2fb")  # baseline revision
+    command.upgrade(cfg, "head")
