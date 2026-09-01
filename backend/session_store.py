@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session as OrmSession
 from db import Session, SessionLocal
 
 COOKIE_NAME = "pg_session"
-TTL_DAYS = int(os.environ.get("SESSION_TTL_DAYS", "14"))
+TTL_DAYS = int(os.environ.get("SESSION_TTL_DAYS", "30"))
 MAX_SESSIONS = int(os.environ.get("MAX_SESSIONS", "5000"))
 _IS_PROD = bool(os.environ.get("RENDER") or os.environ.get("PORT") or os.environ.get("FLY_APP_NAME"))
 

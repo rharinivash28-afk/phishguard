@@ -44,9 +44,9 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="PhishGuard AI — Personal Inbox Sentinel",
-    version="4.1.0",
-    description="Multi-factor phishing forensics with a private per-user workspace and Gmail app-password monitoring.",
+    title="PhishGuard AI — Enterprise Inbox Sentinel",
+    version="5.0.0",
+    description="Zero-PII phishing forensics: private per-session workspace, app-password Gmail monitoring with configurable duration, STIX 2.1 export.",
     lifespan=lifespan,
 )
 
@@ -133,6 +133,7 @@ class EmailInvestigationRequest(BaseModel):
 class GmailConnectRequest(BaseModel):
     email: str
     app_password: str
+    duration_hours: Optional[int] = 24   # 1 / 4 / 12 / 24 / null (Permanent)
 
 
 class QuarantineActionRequest(BaseModel):
@@ -149,9 +150,7 @@ def workspace(
     session: Session = Depends(require_session),
     db: OrmSession = Depends(get_db),
 ) -> UserWorkspace:
-    ws = UserWorkspace(session.id, db)
-    ws.ensure_seeded()
-    return ws
+    return UserWorkspace(session.id, db)
 
 
 def _session_expiry_days(session: Session) -> Optional[int]:
@@ -179,7 +178,12 @@ def health_check():
 
 @app.get("/api/config")
 def get_public_config():
-    return {"version": app.version, "gmail_method": "app_password"}
+    return {
+        "version": app.version,
+        "gmail_method": "app_password",
+        "durations": [1, 4, 12, 24, None],   # hours; null == Permanent
+        "default_duration_hours": 24,
+    }
 
 
 @app.get("/api/session")
@@ -204,7 +208,8 @@ def wipe_session(
 
 @app.get("/api/samples")
 def get_sample_emails():
-    return {"samples": SAMPLE_EMAILS}
+    presets = [s for s in SAMPLE_EMAILS if s.get("preset")]
+    return {"samples": SAMPLE_EMAILS, "presets": presets}
 
 
 # ---------------------------------------------------------------------------
@@ -300,12 +305,17 @@ def simulate_incoming_attack(sample_id: Optional[str] = "sample_ps02_paypal", ws
 @app.post("/api/gmail/connect")
 @limiter.limit("6/minute")
 def connect_gmail(request: Request, payload: GmailConnectRequest, ws: UserWorkspace = Depends(workspace)):
-    return ws.connect_gmail(payload.email, payload.app_password)
+    return ws.connect_gmail(payload.email, payload.app_password, payload.duration_hours)
 
 
 @app.post("/api/gmail/disconnect")
 def disconnect_gmail(ws: UserWorkspace = Depends(workspace)):
     return ws.disconnect_gmail()
+
+
+@app.get("/api/gmail/status")
+def gmail_status(ws: UserWorkspace = Depends(workspace)):
+    return ws.connection_status()
 
 
 @app.post("/api/gmail/sync-now")

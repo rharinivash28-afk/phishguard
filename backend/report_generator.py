@@ -159,6 +159,15 @@ Total Indicators Fired: **{len(indicators)}**
 *Report automatically compiled and signed by PhishGuard AI Security Forensics Engine.*
 """
 
+        # STIX 2.1 threat-intel bundle (structural, offline)
+        try:
+            from stix_builder import build_bundle
+            stix_bundle = build_bundle(
+                {**analysis_result, 'mitre_tactics': mitre_tactics}, email_raw_data, incident_id
+            )
+        except Exception:
+            stix_bundle = None
+
         return {
             'incident_id': incident_id,
             'timestamp': timestamp_str,
@@ -169,5 +178,6 @@ Total Indicators Fired: **{len(indicators)}**
             'iocs': iocs,
             'mitre_tactics': mitre_tactics,
             'recommended_actions': recommended_actions,
-            'markdown_dossier': markdown_dossier
+            'markdown_dossier': markdown_dossier,
+            'stix_bundle': stix_bundle,
         }

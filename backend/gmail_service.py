@@ -8,6 +8,8 @@ import email
 import hashlib
 import imaplib
 import re
+import socket
+import ssl
 import time
 import urllib.parse
 import uuid
@@ -76,12 +78,32 @@ def clean_credential_str(val: str) -> str:
 
 
 class GmailAuthError(Exception):
-    """Raised when Gmail rejects the login — carries a human-readable hint."""
+    """Gmail *rejected* the credentials — a real, permanent failure. The caller
+    should mark the connection dead and ask the user to reconnect."""
 
     def __init__(self, message: str, raw: str = ""):
         super().__init__(message)
         self.message = message
         self.raw = raw
+
+
+class GmailTransientError(Exception):
+    """A temporary problem — timeout, DNS blip, connection reset, TLS hiccup,
+    Gmail rate-limit. The connection is still valid; retry later. Must NOT flip
+    the account to disconnected."""
+
+    def __init__(self, message: str, raw: str = ""):
+        super().__init__(message)
+        self.message = message
+        self.raw = raw
+
+
+# Substrings in an IMAP error that mean "your credentials are wrong", not "network".
+_AUTH_FAIL_MARKERS = (
+    "authenticationfailed", "invalid credentials", "auth failed",
+    "username and password not accepted", "web login required",
+    "[alert]", "lookup failed",
+)
 
 
 def validate_app_password(app_password: str) -> str:
@@ -199,48 +221,86 @@ def parse_eml_bytes(content: bytes, fallback_recipient: str = "") -> Dict[str, A
     return parsed
 
 
+def _is_auth_failure(err: Exception) -> bool:
+    return any(m in str(err).lower() for m in _AUTH_FAIL_MARKERS)
+
+
 def fetch_new_messages(
-    email_addr: str, app_password: str, seen_ids: set, *, limit: int = 12
+    email_addr: str,
+    app_password: str,
+    seen_ids: set,
+    *,
+    limit: int = 12,
+    phases: "list | None" = None,
 ) -> List[Dict[str, Any]]:
     """Connect to Gmail over IMAP, return parsed dicts for messages not in seen_ids.
 
-    Raises GmailAuthError on a login failure (with a user-facing hint),
-    or a plain Exception on a transport error.
+    Raises GmailAuthError when Gmail *rejects* the credentials (permanent),
+    GmailTransientError on any network / timeout / reset (retryable).
+
+    If `phases` is passed (a list), it is filled with
+    {name, ok, ms} entries for: "Validating credentials", "TLS/SSL handshake",
+    "Mailbox indexing" — used to drive the connect progress bar.
     """
-    pw = validate_app_password(app_password)
+    def _phase(name, start, ok=True):
+        if phases is not None:
+            phases.append({"name": name, "ok": ok, "ms": int((time.monotonic() - start) * 1000)})
+
+    t0 = time.monotonic()
+    pw = validate_app_password(app_password)  # raises GmailAuthError on a bad shape
     email_addr = (email_addr or "").strip()
     if not email_addr:
         raise GmailAuthError("No Gmail address provided.")
+    _phase("Validating credentials", t0)
 
-    mail = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=12)
+    t1 = time.monotonic()
+    try:
+        mail = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=15)
+    except (socket.timeout, socket.gaierror, OSError, ssl.SSLError) as e:
+        _phase("TLS/SSL handshake", t1, ok=False)
+        raise GmailTransientError(f"Could not reach Gmail (network): {e}", raw=str(e))
+
     try:
         try:
             mail.login(email_addr, pw)
         except imaplib.IMAP4.error as login_err:
-            raise GmailAuthError(
-                f"Gmail rejected the login for {email_addr}. Most common causes: "
-                "(1) 2-Step Verification is not turned on — turn it on first; "
-                "(2) IMAP is not enabled — Gmail Settings > Forwarding and POP/IMAP > Enable IMAP > Save; "
-                "(3) the App Password was generated for a different Google account; "
-                "(4) you used your normal password instead of a 16-letter App Password. "
-                "Generate a fresh one at myaccount.google.com/apppasswords.",
-                raw=str(login_err),
-            )
+            if _is_auth_failure(login_err):
+                _phase("TLS/SSL handshake", t1, ok=False)
+                raise GmailAuthError(
+                    f"Gmail rejected the login for {email_addr}. Most common causes: "
+                    "(1) 2-Step Verification is not turned on — turn it on first; "
+                    "(2) IMAP is not enabled — Gmail Settings > Forwarding and POP/IMAP > Enable IMAP > Save; "
+                    "(3) the App Password was generated for a different Google account; "
+                    "(4) you used your normal password instead of a 16-letter App Password. "
+                    "Generate a fresh one at myaccount.google.com/apppasswords.",
+                    raw=str(login_err),
+                )
+            raise GmailTransientError(f"IMAP login hiccup, will retry: {login_err}", raw=str(login_err))
+        except (socket.timeout, socket.gaierror, ConnectionError, ssl.SSLError, OSError) as e:
+            _phase("TLS/SSL handshake", t1, ok=False)
+            raise GmailTransientError(f"Connection dropped during login: {e}", raw=str(e))
+        _phase("TLS/SSL handshake", t1)
 
-        mail.select("INBOX")
-        status, messages = mail.search(None, "ALL")
-        out: List[Dict[str, Any]] = []
-        if status == "OK" and messages and messages[0]:
-            for num in messages[0].split()[-limit:]:
-                res, msg_data = mail.fetch(num, "(RFC822)")
-                for part in msg_data:
-                    if not isinstance(part, tuple):
-                        continue
-                    msg = email.message_from_bytes(part[1])
-                    mid = msg.get("Message-ID", f"live_{uuid.uuid4().hex[:10]}")
-                    if mid in seen_ids:
-                        continue
-                    out.append(_parse_message(msg, email_addr))
+        t2 = time.monotonic()
+        try:
+            mail.select("INBOX")
+            status, messages = mail.search(None, "ALL")
+            out: List[Dict[str, Any]] = []
+            if status == "OK" and messages and messages[0]:
+                for num in messages[0].split()[-limit:]:
+                    res, msg_data = mail.fetch(num, "(RFC822)")
+                    for part in msg_data:
+                        if not isinstance(part, tuple):
+                            continue
+                        msg = email.message_from_bytes(part[1])
+                        mid = msg.get("Message-ID", f"live_{uuid.uuid4().hex[:10]}")
+                        if mid in seen_ids:
+                            continue
+                        out.append(_parse_message(msg, email_addr))
+        except (imaplib.IMAP4.abort, socket.timeout, ConnectionError, ssl.SSLError, OSError) as e:
+            _phase("Mailbox indexing", t2, ok=False)
+            raise GmailTransientError(f"Lost the connection while reading the mailbox: {e}", raw=str(e))
+        _phase("Mailbox indexing", t2)
         return out
     finally:
         try:

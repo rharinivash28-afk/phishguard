@@ -59,11 +59,18 @@ def run_tick(time_budget_s: float = 25.0) -> dict:
             .order_by(GmailAccount.last_scan_at.is_(None).desc(), GmailAccount.last_scan_at.asc())
         ).scalars().all() if ids else []
 
+        expired = 0
         for acct in accts:
+            ws = UserWorkspace(acct.session_id, db)
+            # duration expiry is enforced for every connected account each pass,
+            # even when the time budget stops us from actually polling it
+            if ws._enforce_duration():
+                expired += 1
+                continue
             if time.monotonic() - start > time_budget_s:
-                break
+                continue
             try:
-                res = UserWorkspace(acct.session_id, db).poll_live_gmail()
+                res = ws.poll_live_gmail()
                 scanned += 1
                 new_emails += int(res.get("new_emails_found", 0) or 0)
             except Exception as exc:  # never let one user's failure kill the pass
@@ -76,6 +83,7 @@ def run_tick(time_budget_s: float = 25.0) -> dict:
     return {
         "scanned_sessions": scanned,
         "new_emails": new_emails,
+        "expired_connections": expired,
         "duration_ms": int((time.monotonic() - start) * 1000),
     }
 

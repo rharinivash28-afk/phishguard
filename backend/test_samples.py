@@ -1,7 +1,9 @@
 SAMPLE_EMAILS = [
     {
         "id": "sample_ps02_paypal",
-        "title": "PS-02 Problem Statement: PayPal Account Suspension",
+        "title": "PayPal Phish",
+        "preset": True,
+        "preset_note": "Classic account-suspension scare with a homoglyph domain (paypa1) and forced urgency.",
         "sender_address": "security@paypa1-login.com",
         "display_name": "PayPal Security Team",
         "subject": "Your account will be suspended within 24 hours!",
@@ -10,7 +12,7 @@ SAMPLE_EMAILS = [
         "spf_status": "FAIL",
         "dkim_status": "FAIL",
         "dmarc_status": "FAIL",
-        "body": "Dear Harinivash,\n\nWe detected suspicious unauthorized login attempts on your account from an unknown device in Moscow, Russia.\n\nYour account will be suspended within 24 hours unless you verify your identity and confirm your credentials immediately.\n\nPlease follow the link below to restore access:\nhttp://paypa1-login.com/verify\n\nFailure to comply will result in permanent account termination.\n\nPayPal Security Operations",
+        "body": "Dear Customer,\n\nWe detected suspicious unauthorized login attempts on your account from an unknown device in Moscow, Russia.\n\nYour account will be suspended within 24 hours unless you verify your identity and confirm your credentials immediately.\n\nPlease follow the link below to restore access:\nhttp://paypa1-login.com/verify\n\nFailure to comply will result in permanent account termination.\n\nPayPal Security Operations",
         "urls": [
             {
                 "url": "http://paypa1-login.com/verify",
@@ -61,7 +63,9 @@ SAMPLE_EMAILS = [
     },
     {
         "id": "sample_docusign_macro",
-        "title": "DocuSign Weaponized Macro Payload",
+        "title": "DocuSign Spoof",
+        "preset": True,
+        "preset_note": "Fake contract with a double-extension .pdf.exe payload and a 'enable macros' lure.",
         "sender_address": "documents@docus1gn-sign.com",
         "display_name": "DocuSign Signature Service",
         "subject": "Action Required: Sign Employment Contract Agreement (Urgent)",
@@ -86,7 +90,9 @@ SAMPLE_EMAILS = [
     },
     {
         "id": "sample_legit_google",
-        "title": "Legitimate: Google Security Alert (Benign)",
+        "title": "Legitimate Google Alert",
+        "preset": True,
+        "preset_note": "A real Google security notice — SPF/DKIM/DMARC all pass, genuine domain. Should score LOW.",
         "sender_address": "no-reply@accounts.google.com",
         "display_name": "Google",
         "subject": "Security alert: New device signed in to your Google Account",

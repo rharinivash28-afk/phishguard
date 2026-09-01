@@ -48,6 +48,24 @@ def _client():
     return c
 
 
+def test_fresh_workspace_inbox_is_empty():
+    """No demo seed — a brand-new session starts with an empty inbox."""
+    c = _client()
+    inbox = c.get("/api/sentinel/inbox").json()["inbox"]
+    assert inbox == [], f"expected empty inbox, got {len(inbox)} items"
+    stats = c.get("/api/sentinel/stats").json()
+    assert stats["total_emails_scanned"] == 0
+    assert stats["monitoring_mode"] == "AWAITING_CONNECTION"
+
+
+def test_samples_endpoint_returns_three_presets():
+    c = _client()
+    data = c.get("/api/samples").json()
+    assert len(data["presets"]) == 3
+    titles = {p["title"] for p in data["presets"]}
+    assert titles == {"PayPal Phish", "DocuSign Spoof", "Legitimate Google Alert"}
+
+
 def test_two_sessions_are_isolated():
     a, b = _client(), _client()
     a.post("/api/sentinel/simulate-incoming")
@@ -63,7 +81,7 @@ def test_anonymous_caller_gets_fresh_workspace():
     a.post("/api/sentinel/simulate-incoming")
     anon = TestClient(app.app)  # never calls /api/session, no cookie sent
     inbox = anon.get("/api/sentinel/inbox").json()["inbox"]
-    assert all(not x["id"].startswith("live_sim_") for x in inbox), "anon caller saw another session's data"
+    assert inbox == [], "anon caller saw another session's data"
 
 
 def test_wipe_only_affects_caller():

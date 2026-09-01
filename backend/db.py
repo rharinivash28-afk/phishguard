@@ -10,7 +10,7 @@ import uuid
 from typing import Optional
 
 from sqlalchemy import (
-    JSON, Boolean, DateTime, ForeignKey, String, Text, create_engine, func,
+    JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, create_engine, func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
@@ -85,6 +85,10 @@ class GmailAccount(Base):
     email: Mapped[str] = mapped_column(String(320))
     app_password_enc: Mapped[str] = mapped_column(Text)  # Fernet ciphertext, never plaintext
     connected: Mapped[bool] = mapped_column(Boolean, default=False)
+    connected_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
+    # NULL duration_hours == "Permanent" (no connection expiry)
+    duration_hours: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     last_scan_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[Optional[str]] = mapped_column(Text)
     seen_ids: Mapped[list] = mapped_column(JSON, default=list)  # capped list of Message-IDs
