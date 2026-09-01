@@ -12,12 +12,25 @@ services:
     envVars:
       - key: RENDER
         value: "true"
+      # DEMO_MODE (default ON in any hosted build): shows a "shared instance"
+      # banner and blocks the live-mailbox connect flows, because this build keeps
+      # one in-memory store shared by every visitor. Set to "0" only if you are the
+      # sole user of your own private instance.
+      - key: DEMO_MODE
+        value: "1"
+      # Allow live Gmail even with DEMO_MODE on (you accept that a connected
+      # mailbox is visible to everyone who opens the URL). Implied automatically
+      # when GOOGLE_CLIENT_ID/SECRET are set below.
+      # - key: ALLOW_LIVE_GMAIL
+      #   value: "1"
+      #
       # Render sets RENDER_EXTERNAL_URL automatically; the app derives the OAuth
       # redirect URI from it. Override here only if you use a custom domain.
       # - key: GOOGLE_REDIRECT_URI
       #   value: https://your-domain.com/api/auth/google/callback
       #
       # Optional: pre-seed Google OAuth so users skip the in-app setup step.
+      # Setting these also turns ALLOW_LIVE_GMAIL on.
       # - key: GOOGLE_CLIENT_ID
       #   sync: false
       # - key: GOOGLE_CLIENT_SECRET

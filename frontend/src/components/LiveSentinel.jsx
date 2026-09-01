@@ -15,6 +15,7 @@ function GoogleGlyph({ className = 'w-4 h-4' }) {
 export default function LiveSentinel({
   inbox,
   stats,
+  liveGmailAllowed = true,
   onRefresh,
   onQuarantineToggle,
   onInspectEmail,
@@ -89,7 +90,7 @@ export default function LiveSentinel({
   return (
     <div className="space-y-6">
       {/* Connect Gmail banner */}
-      {!gmailConnected && (
+      {!gmailConnected && liveGmailAllowed && (
         <div className="glass p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-xl bg-white text-black"><Mail className="w-5 h-5" /></div>
@@ -106,6 +107,21 @@ export default function LiveSentinel({
             <button onClick={onOpenOAuthModal} className="btn-ghost" title="Other ways to connect">
               Other options
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Demo-instance explainer (replaces the connect banner when live Gmail is off) */}
+      {!gmailConnected && !liveGmailAllowed && (
+        <div className="glass p-4 flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-white/[0.06] text-white/80 border border-white/12"><ShieldCheck className="w-5 h-5" /></div>
+          <div>
+            <h3 className="text-sm font-bold text-white">Try the phishing engine below</h3>
+            <p className="text-xs text-white/45 mt-0.5">
+              Load a sample, <span className="text-white/70">paste any email</span>, upload a{' '}
+              <code className="text-white/70 font-mono">.eml</code>, or hit <span className="text-white/70">Simulate</span> &mdash;
+              every message is scored live by the forensics engine.
+            </p>
           </div>
         </div>
       )}

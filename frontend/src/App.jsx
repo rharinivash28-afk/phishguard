@@ -14,6 +14,10 @@ export default function App() {
   const [stats, setStats] = useState(null);
   const [samples, setSamples] = useState([]);
   const [reports, setReports] = useState([]);
+  const [config, setConfig] = useState({ demo_mode: false, allow_live_gmail: true });
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+
+  const liveGmailAllowed = !config.demo_mode || config.allow_live_gmail;
 
   const [selectedEmailForInspection, setSelectedEmailForInspection] = useState(null);
   const [activeReportModal, setActiveReportModal] = useState(null);
@@ -47,6 +51,10 @@ export default function App() {
 
   useEffect(() => {
     fetchData();
+    fetch('/api/config')
+      .then(r => r.json())
+      .then(cfg => setConfig(cfg))
+      .catch(() => {});
     const interval = setInterval(fetchData, 6000);
     return () => clearInterval(interval);
   }, []);
@@ -257,9 +265,20 @@ export default function App() {
   };
 
   const handleStartOAuthLogin = async () => {
+    if (!liveGmailAllowed) {
+      showNotification(
+        'This is a shared public demo — connecting a mailbox is disabled. Try the analyzer, paste an email, or upload a .eml instead.',
+        'info'
+      );
+      return;
+    }
     try {
       const res = await fetch('/api/auth/google/login');
       if (!res.ok) {
+        if (res.status === 403) {
+          showNotification('Live Gmail is disabled on this shared demo instance.', 'info');
+          return;
+        }
         // No OAuth client configured yet — open the modal so the user can set one up
         setIsOAuthModalOpen(true);
         showNotification('Google sign-in needs an OAuth client. See "Google sign-in" tab.', 'info');
@@ -372,11 +391,34 @@ export default function App() {
         onSimulateAttack={handleSimulateAttack}
       />
 
+      {config.demo_mode && !bannerDismissed && (
+        <div className="bg-white/[0.06] border-b border-white/10 backdrop-blur-xl">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex items-start sm:items-center gap-3 text-xs">
+            <span className="pill-muted shrink-0 mt-0.5 sm:mt-0">Shared demo</span>
+            <p className="text-white/60 flex-1 leading-relaxed">
+              This is a public instance — the inbox, quarantine and stats are{' '}
+              <span className="text-white/80 font-semibold">shared by everyone here</span> and reset on redeploy.
+              {liveGmailAllowed
+                ? ' Connecting a real mailbox works but exposes it to other visitors.'
+                : ' Live Gmail connection is disabled. Use the analyzer, "Paste email", ".eml upload" and "Simulate" — all fully working.'}
+            </p>
+            <button
+              onClick={() => setBannerDismissed(true)}
+              className="text-white/40 hover:text-white/80 transition shrink-0 font-mono"
+              title="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {activeTab === 'sentinel' && (
           <LiveSentinel
             inbox={inbox}
             stats={stats}
+            liveGmailAllowed={liveGmailAllowed}
             onRefresh={fetchData}
             onQuarantineToggle={handleQuarantineToggle}
             onInspectEmail={handleInspectEmail}

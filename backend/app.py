@@ -30,9 +30,21 @@ app = FastAPI(
     description="Enterprise Multi-Factor Phishing Forensics Engine, Auto-Quarantine, and Gmail Ingestion Engine"
 )
 
+# In production the UI is served from this very process, so requests are same-origin
+# and no cross-origin allowance is needed. In local dev the Vite dev server (:5173)
+# calls the API cross-origin, so allow just that. A custom front-end origin can be
+# whitelisted with CORS_ALLOW_ORIGINS (comma-separated).
+_cors_env = os.environ.get("CORS_ALLOW_ORIGINS", "").strip()
+if _cors_env:
+    _allowed_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
+elif os.environ.get("RENDER") or os.environ.get("PORT") or os.environ.get("FLY_APP_NAME"):
+    _allowed_origins = []  # prod: same-origin only
+else:
+    _allowed_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -86,6 +98,37 @@ class OAuthClientCredsRequest(BaseModel):
 FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "")
 _IS_PROD = bool(os.environ.get("RENDER") or os.environ.get("PORT") or os.environ.get("FLY_APP_NAME"))
 
+# This build keeps all inbox / quarantine / OAuth state in a single in-memory
+# store shared by every visitor. That's fine for the analyzer + demo features, but
+# a real Gmail connection would expose that mailbox to everyone hitting the URL.
+# DEMO_MODE (default ON in prod) makes the UI show a shared-instance banner and,
+# unless ALLOW_LIVE_GMAIL is set, hides the live-mailbox connect flows.
+DEMO_MODE = os.environ.get("DEMO_MODE", "1" if _IS_PROD else "0").lower() not in ("0", "false", "no", "")
+# Live-mailbox connect stays open when the operator explicitly allows it, OR when
+# they've baked in a shared Google client (that's an explicit opt-in already).
+_shared_google_client = bool(
+    os.environ.get("GOOGLE_CLIENT_ID", "").strip() and os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
+)
+ALLOW_LIVE_GMAIL = (
+    os.environ.get("ALLOW_LIVE_GMAIL", "0").lower() not in ("0", "false", "no", "")
+    or _shared_google_client
+    or not _IS_PROD
+)
+
+
+def _guard_live_gmail() -> None:
+    """Block the shared-state-leaking live-mailbox flows in a public demo build."""
+    if DEMO_MODE and not ALLOW_LIVE_GMAIL:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "This is a shared public demo — connecting a real mailbox would expose it "
+                "to every visitor. Run your own instance (set ALLOW_LIVE_GMAIL=1) to use "
+                "live Gmail monitoring. The analyzer, paste-an-email, .eml upload and "
+                "attack simulation all work here without connecting."
+            ),
+        )
+
 
 def _home_redirect(query: str) -> str:
     if FRONTEND_ORIGIN:
@@ -99,6 +142,16 @@ def _home_redirect(query: str) -> str:
 @app.get("/api/health")
 def health_check():
     return {"status": "ONLINE", "service": "PhishGuard Security Engine", "timestamp": time.time()}
+
+@app.get("/api/config")
+def get_public_config():
+    """Runtime flags the frontend needs on load."""
+    return {
+        "demo_mode": DEMO_MODE,
+        "allow_live_gmail": ALLOW_LIVE_GMAIL,
+        "is_prod": _IS_PROD,
+        "version": app.version,
+    }
 
 @app.get("/api/samples")
 def get_sample_emails():
@@ -255,6 +308,8 @@ def perform_quarantine_action(payload: QuarantineActionRequest):
 
 @app.post("/api/sentinel/connect-gmail")
 def connect_user_gmail(payload: GmailConfigRequest):
+    if payload.app_password:
+        _guard_live_gmail()
     res = sentinel.connect_gmail(payload.email, payload.app_password or "")
     return res
 
@@ -277,16 +332,19 @@ def simulate_incoming_attack(sample_id: Optional[str] = "sample_ps02_paypal"):
 # Google OAuth endpoints
 @app.post("/api/auth/google/direct-token")
 def connect_with_direct_oauth_token(payload: DirectTokenRequest):
+    _guard_live_gmail()
     res = oauth_service.connect_with_direct_token(payload.email, payload.access_token)
     return res
 
 @app.post("/api/auth/google/save-credentials")
 def save_oauth_client_credentials(payload: OAuthClientCredsRequest):
+    _guard_live_gmail()
     return oauth_service.save_client_credentials(payload.client_id, payload.client_secret)
 
 @app.get("/api/auth/google/login")
 def start_google_oauth():
     """Return the Google consent URL so the frontend can redirect the user."""
+    _guard_live_gmail()
     if not oauth_service.has_client_credentials():
         raise HTTPException(status_code=400, detail="Google OAuth client not configured yet.")
     return {"auth_url": oauth_service.get_auth_url(), "redirect_uri": oauth_service.redirect_uri}

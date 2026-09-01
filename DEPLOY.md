@@ -3,6 +3,22 @@
 The whole app ships as a single Docker image: the FastAPI backend serves the API
 **and** the compiled React UI from the same origin. One URL, one deploy.
 
+## Shared-state / demo mode — read this first
+
+This build keeps **all** inbox, quarantine, report and OAuth state in a single
+in-memory store that **every visitor shares**. Great for a public demo of the
+phishing engine; **not** safe for real multi-user Gmail monitoring — one person
+connecting their mailbox would expose it to everyone on the URL.
+
+So any hosted build starts with **`DEMO_MODE=1`**:
+- the UI shows a "shared instance" banner;
+- the analyzer, "Paste email", ".eml upload" and "Simulate" all work normally;
+- the live-mailbox connect flows (Google sign-in, app-password/IMAP) return `403`.
+
+To run a **private** instance that is only ever used by you, set `DEMO_MODE=0`
+(or `ALLOW_LIVE_GMAIL=1` to keep the banner but re-enable live Gmail). Setting
+`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` also re-enables live Gmail automatically.
+
 ## Option A — Render (recommended, free)
 
 1. **Push this folder to a GitHub repo.**
@@ -40,7 +56,9 @@ The whole app ships as a single Docker image: the FastAPI backend serves the API
 ### Notes
 - Free tier sleeps after 15 min idle (first request then takes ~30 s to wake).
   That also pauses the background Gmail polling while asleep.
-- App-password / IMAP login works here too (unlike Cloudflare Workers).
+- App-password / IMAP login works here too (unlike Cloudflare Workers) — but only
+  when live Gmail is enabled (see "demo mode" above).
+- The in-memory store resets on every redeploy / cold start.
 
 ## Option B — Fly.io (always-on, no sleep)
 
@@ -65,11 +83,13 @@ docker run -p 8000:8000 \
 ## Local production check
 
 ```bash
-cd backend && python test_analyzer.py   # analyzer regression tests, no deps
+cd backend && python run_tests.py       # all backend tests, no pytest needed
 cd ../frontend && npm run build && cd ..
 cd backend && python app.py              # detects ../frontend/dist and serves everything on :8000
 ```
 Then open http://localhost:8000 (not 5173).
+
+To preview the hosted "shared demo" behaviour locally, start it with `DEMO_MODE=1`.
 
 ## Cloudflare?
 
