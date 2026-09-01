@@ -60,6 +60,7 @@ export default function DeepInvestigator({ initialEmail, samples, onGenerateRepo
       const payload = { ...formData, urls: urlList, attachments: [] };
       const res = await fetch('/api/analyze', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });

@@ -4,18 +4,10 @@ import {
   Eye, CheckCircle2, AlertOctagon, Mail, PlusCircle, Send, Upload
 } from 'lucide-react';
 
-function GoogleGlyph({ className = 'w-4 h-4' }) {
-  return (
-    <span className={`inline-flex items-center justify-center rounded-full bg-black text-white font-black ${className}`}>
-      G
-    </span>
-  );
-}
-
 export default function LiveSentinel({
   inbox,
   stats,
-  liveGmailAllowed = true,
+  gmailConnected = false,
   onRefresh,
   onQuarantineToggle,
   onInspectEmail,
@@ -24,8 +16,7 @@ export default function LiveSentinel({
   onOpenSafetyModal,
   onIngestCustomEmail,
   onUploadEml,
-  onOpenOAuthModal,
-  onStartOAuthLogin,
+  onConnectGmail,
 }) {
   const [filter, setFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -37,8 +28,6 @@ export default function LiveSentinel({
   const [ingesting, setIngesting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
-
-  const gmailConnected = stats?.oauth?.is_connected || stats?.imap_connected;
 
   const filteredItems = (inbox || []).filter(item => {
     const matchesSearch =
@@ -90,39 +79,22 @@ export default function LiveSentinel({
   return (
     <div className="space-y-6">
       {/* Connect Gmail banner */}
-      {!gmailConnected && liveGmailAllowed && (
+      {!gmailConnected && (
         <div className="glass p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-xl bg-white text-black"><Mail className="w-5 h-5" /></div>
             <div>
               <h3 className="text-sm font-bold text-white">Connect your Gmail for live monitoring</h3>
-              <p className="text-xs text-white/45 mt-0.5">Log in with your Google account &mdash; read-only. Until then you're seeing demo &amp; uploaded mail.</p>
+              <p className="text-xs text-white/45 mt-0.5">
+                Read-only, with a 16-character app password. Until then you're seeing demo mail &mdash; and you can still
+                paste, upload, or simulate emails below.
+              </p>
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button onClick={onStartOAuthLogin} className="btn-primary">
-              <GoogleGlyph className="w-4 h-4 text-[10px]" />
-              <span>Sign in with Google</span>
-            </button>
-            <button onClick={onOpenOAuthModal} className="btn-ghost" title="Other ways to connect">
-              Other options
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Demo-instance explainer (replaces the connect banner when live Gmail is off) */}
-      {!gmailConnected && !liveGmailAllowed && (
-        <div className="glass p-4 flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-white/[0.06] text-white/80 border border-white/12"><ShieldCheck className="w-5 h-5" /></div>
-          <div>
-            <h3 className="text-sm font-bold text-white">Try the phishing engine below</h3>
-            <p className="text-xs text-white/45 mt-0.5">
-              Load a sample, <span className="text-white/70">paste any email</span>, upload a{' '}
-              <code className="text-white/70 font-mono">.eml</code>, or hit <span className="text-white/70">Simulate</span> &mdash;
-              every message is scored live by the forensics engine.
-            </p>
-          </div>
+          <button onClick={onConnectGmail} className="btn-primary shrink-0">
+            <Mail className="w-4 h-4" />
+            <span>Connect Gmail</span>
+          </button>
         </div>
       )}
 
@@ -154,8 +126,8 @@ export default function LiveSentinel({
         <div className="glass p-4 flex items-center justify-between">
           <div className="min-w-0">
             <p className="text-[11px] font-semibold text-white/45 uppercase tracking-wider">Monitored Mailbox</p>
-            <p className="text-sm font-bold text-white/90 mt-1 font-mono truncate" title={stats?.oauth?.user_email || stats?.connected_email}>
-              {stats?.oauth?.user_email || stats?.connected_email || 'harinivash28082007@gmail.com'}
+            <p className="text-sm font-bold text-white/90 mt-1 font-mono truncate" title={stats?.connected_email || 'Not connected'}>
+              {stats?.connected_email || 'Not connected'}
             </p>
             <p className="text-[11px] text-white/40 mt-1 flex items-center gap-1">
               <span className={`w-1.5 h-1.5 rounded-full ${gmailConnected ? 'bg-white animate-pulse' : 'bg-white/30'}`} />

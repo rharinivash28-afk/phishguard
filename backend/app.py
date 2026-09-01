@@ -1,44 +1,50 @@
 import os
+import pathlib
+from contextlib import asynccontextmanager
+
 import uvicorn
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, FileResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
-import email
-from email.header import decode_header
+from pydantic import BaseModel
+from sqlalchemy.orm import Session as OrmSession
+from typing import List, Optional
 import time
-import re
-import uuid
-import pathlib
-import urllib.parse
 
-from analyzer import PhishingInvestigationEngine, extract_domain
-from report_generator import CybercrimeIncidentReportGenerator
-from gmail_service import SentinelInboxManager, decode_mime_words
-from gmail_oauth_service import GmailOAuthService
+from db import Session, init_db
+from gmail_service import parse_eml_bytes
+from session_store import get_db, require_session
 from test_samples import SAMPLE_EMAILS
+from user_workspace import UserWorkspace
+from poller import start_poller
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    init_db()
+    start_poller()
+    yield
+
 
 app = FastAPI(
-    title="PhishGuard AI - 24/7 Inbox Sentinel & Gmail Integration Platform",
-    version="3.5.0",
-    description="Enterprise Multi-Factor Phishing Forensics Engine, Auto-Quarantine, and Gmail Ingestion Engine"
+    title="PhishGuard AI — Personal Inbox Sentinel",
+    version="4.0.0",
+    description="Multi-factor phishing forensics with a private per-user workspace and Gmail app-password monitoring.",
+    lifespan=lifespan,
 )
 
-# In production the UI is served from this very process, so requests are same-origin
-# and no cross-origin allowance is needed. In local dev the Vite dev server (:5173)
-# calls the API cross-origin, so allow just that. A custom front-end origin can be
-# whitelisted with CORS_ALLOW_ORIGINS (comma-separated).
+# Same-origin in prod (the UI is served from this process). Localhost:5173 in dev
+# for the Vite dev server. Override with CORS_ALLOW_ORIGINS (comma-separated).
 _cors_env = os.environ.get("CORS_ALLOW_ORIGINS", "").strip()
 if _cors_env:
     _allowed_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
 elif os.environ.get("RENDER") or os.environ.get("PORT") or os.environ.get("FLY_APP_NAME"):
-    _allowed_origins = []  # prod: same-origin only
+    _allowed_origins = []
 else:
     _allowed_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
@@ -50,329 +56,192 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-engine = PhishingInvestigationEngine()
-sentinel = SentinelInboxManager()
-oauth_service = GmailOAuthService(engine, sentinel)
 
+# ---------------------------------------------------------------------------
+# request models
+# ---------------------------------------------------------------------------
 class UrlItem(BaseModel):
     url: str
     anchor: Optional[str] = ""
 
+
 class AttachmentItem(BaseModel):
     filename: str
     size: Optional[int] = 0
+
 
 class EmailInvestigationRequest(BaseModel):
     sender_address: str
     display_name: Optional[str] = ""
     subject: str
     body: str
-    recipient: Optional[str] = "harinivash28082007@gmail.com"
+    recipient: Optional[str] = ""
     urls: Optional[List[UrlItem]] = []
     attachments: Optional[List[AttachmentItem]] = []
     spf_status: Optional[str] = "UNKNOWN"
     dkim_status: Optional[str] = "UNKNOWN"
     dmarc_status: Optional[str] = "UNKNOWN"
 
-class GmailConfigRequest(BaseModel):
+
+class GmailConnectRequest(BaseModel):
     email: str
-    app_password: Optional[str] = ""
+    app_password: str
+
 
 class QuarantineActionRequest(BaseModel):
     email_id: str
     action: str
 
+
 class ToggleMonitoringRequest(BaseModel):
     active: bool
 
-class DirectTokenRequest(BaseModel):
-    email: str
-    access_token: str
 
-class OAuthClientCredsRequest(BaseModel):
-    client_id: str
-    client_secret: str
-
-# In production (Render/Fly/Docker) the UI is served from this same origin, so redirect
-# home with a relative path. In local dev the UI runs on the Vite dev server (:5173).
-FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "")
-_IS_PROD = bool(os.environ.get("RENDER") or os.environ.get("PORT") or os.environ.get("FLY_APP_NAME"))
-
-# This build keeps all inbox / quarantine / OAuth state in a single in-memory
-# store shared by every visitor. That's fine for the analyzer + demo features, but
-# a real Gmail connection would expose that mailbox to everyone hitting the URL.
-# DEMO_MODE (default ON in prod) makes the UI show a shared-instance banner and,
-# unless ALLOW_LIVE_GMAIL is set, hides the live-mailbox connect flows.
-DEMO_MODE = os.environ.get("DEMO_MODE", "1" if _IS_PROD else "0").lower() not in ("0", "false", "no", "")
-# Live-mailbox connect stays open when the operator explicitly allows it, OR when
-# they've baked in a shared Google client (that's an explicit opt-in already).
-_shared_google_client = bool(
-    os.environ.get("GOOGLE_CLIENT_ID", "").strip() and os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
-)
-ALLOW_LIVE_GMAIL = (
-    os.environ.get("ALLOW_LIVE_GMAIL", "0").lower() not in ("0", "false", "no", "")
-    or _shared_google_client
-    or not _IS_PROD
-)
+# convenience: build a workspace for the current session
+def workspace(
+    session: Session = Depends(require_session),
+    db: OrmSession = Depends(get_db),
+) -> UserWorkspace:
+    ws = UserWorkspace(session.id, db)
+    ws.ensure_seeded()
+    return ws
 
 
-def _guard_live_gmail() -> None:
-    """Block the shared-state-leaking live-mailbox flows in a public demo build."""
-    if DEMO_MODE and not ALLOW_LIVE_GMAIL:
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                "This is a shared public demo — connecting a real mailbox would expose it "
-                "to every visitor. Run your own instance (set ALLOW_LIVE_GMAIL=1) to use "
-                "live Gmail monitoring. The analyzer, paste-an-email, .eml upload and "
-                "attack simulation all work here without connecting."
-            ),
-        )
-
-
-def _home_redirect(query: str) -> str:
-    if FRONTEND_ORIGIN:
-        base = FRONTEND_ORIGIN.rstrip("/")
-    elif _IS_PROD:
-        base = ""  # same-origin, relative
-    else:
-        base = "http://localhost:5173"
-    return f"{base}/?{query}"
-
+# ---------------------------------------------------------------------------
+# meta
+# ---------------------------------------------------------------------------
 @app.get("/api/health")
 def health_check():
     return {"status": "ONLINE", "service": "PhishGuard Security Engine", "timestamp": time.time()}
 
+
 @app.get("/api/config")
 def get_public_config():
-    """Runtime flags the frontend needs on load."""
-    return {
-        "demo_mode": DEMO_MODE,
-        "allow_live_gmail": ALLOW_LIVE_GMAIL,
-        "is_prod": _IS_PROD,
-        "version": app.version,
-    }
+    return {"version": app.version, "gmail_method": "app_password"}
+
+
+@app.get("/api/session")
+def touch_session(session: Session = Depends(require_session)):
+    """Called on first load so the cookie is set before polling begins."""
+    return {"session": session.id[:8], "monitoring_active": session.monitoring_active}
+
+
+@app.post("/api/session/wipe")
+def wipe_session(
+    session: Session = Depends(require_session),
+    db: OrmSession = Depends(get_db),
+):
+    UserWorkspace(session.id, db).wipe_everything()
+    return {"status": "WIPED"}
+
 
 @app.get("/api/samples")
 def get_sample_emails():
     return {"samples": SAMPLE_EMAILS}
 
+
+# ---------------------------------------------------------------------------
+# analysis
+# ---------------------------------------------------------------------------
 @app.post("/api/analyze")
-def analyze_email(payload: EmailInvestigationRequest):
-    data_dict = payload.model_dump()
-    analysis = engine.investigate(data_dict)
-    report = None
-    if analysis["risk_score"] >= 50:
-        report = CybercrimeIncidentReportGenerator.generate_report(analysis, data_dict)
-    
-    # Ingest into sentinel live stream
-    item = sentinel.process_new_email(data_dict)
-    return {
-        "analysis": analysis,
-        "incident_report": report,
-        "item": item
-    }
+def analyze_email(payload: EmailInvestigationRequest, ws: UserWorkspace = Depends(workspace)):
+    data = payload.model_dump()
+    analysis = ws.analyze_only(data)
+    item = ws.process_new_email(data)
+    report = ws.get_report(item["incident_id"]) if item.get("incident_id") else None
+    return {"analysis": analysis, "incident_report": report, "item": item}
 
-@app.post("/api/upload-eml")
-async def upload_eml_file(file: UploadFile = File(...)):
-    content = await file.read()
-    try:
-        msg = email.message_from_bytes(content)
-        subject = decode_mime_words(msg.get("Subject", "No Subject"))
-        sender = decode_mime_words(msg.get("From", "Unknown Sender"))
-        recipient = decode_mime_words(msg.get("To", "harinivash28082007@gmail.com"))
-        date_hdr = msg.get("Date", time.strftime("%Y-%m-%d %H:%M"))
-        
-        display_name = sender.split("<")[0].strip().replace('"', '') if "<" in sender else sender
-        clean_sender = sender.split("<")[-1].strip(">").strip() if "<" in sender else sender
-        
-        body = ""
-        urls = []
-        attachments = []
-        
-        if msg.is_multipart():
-            for part in msg.walk():
-                content_type = part.get_content_type()
-                content_disposition = str(part.get("Content-Disposition"))
-                
-                if "attachment" in content_disposition:
-                    filename = decode_mime_words(part.get_filename() or "attachment.bin")
-                    attachments.append({"filename": filename, "size": len(part.get_payload(decode=True) or b"")})
-                elif content_type == "text/plain" and not body:
-                    payload = part.get_payload(decode=True)
-                    if payload:
-                        body = payload.decode(errors="ignore")
-        else:
-            payload = msg.get_payload(decode=True)
-            if payload:
-                body = payload.decode(errors="ignore")
-
-        # Extract URLs
-        extracted_urls = re.findall(r'https?://[^\s<>"\'\)]+', body)
-        urls = [{"url": u, "anchor": ""} for u in extracted_urls]
-
-        # Authentication headers
-        auth_res = msg.get("Authentication-Results", "").lower()
-        received_spf = msg.get("Received-SPF", "").lower()
-        
-        spf_status = "PASS" if ("spf=pass" in auth_res or "pass" in received_spf) else ("FAIL" if "spf=fail" in auth_res else "UNKNOWN")
-        dkim_status = "PASS" if "dkim=pass" in auth_res else ("FAIL" if "dkim=fail" in auth_res else "UNKNOWN")
-        dmarc_status = "PASS" if "dmarc=pass" in auth_res else ("FAIL" if "dmarc=fail" in auth_res else "UNKNOWN")
-
-        gmail_query = urllib.parse.quote(f"from:{clean_sender} {subject}")
-        gmail_web_url = f"https://mail.google.com/mail/u/0/#search/{gmail_query}"
-
-        email_payload = {
-            "id": f"eml_{uuid.uuid4().hex[:8]}",
-            "title": f"Gmail: {subject[:30]}",
-            "sender_address": clean_sender,
-            "display_name": display_name,
-            "subject": subject,
-            "recipient": recipient or "harinivash28082007@gmail.com",
-            "date": date_hdr,
-            "body": body or "No text body found in message.",
-            "urls": urls,
-            "attachments": attachments,
-            "spf_status": spf_status,
-            "dkim_status": dkim_status,
-            "dmarc_status": dmarc_status,
-            "gmail_web_url": gmail_web_url
-        }
-
-        analysis = engine.investigate(email_payload)
-        item = sentinel.process_new_email(email_payload)
-        report = None
-        if analysis["risk_score"] >= 50:
-            report = CybercrimeIncidentReportGenerator.generate_report(analysis, email_payload)
-
-        return {
-            "status": "SUCCESS",
-            "item": item,
-            "analysis": analysis,
-            "incident_report": report
-        }
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to parse EML: {str(e)}")
 
 @app.post("/api/generate-report")
-def generate_report_endpoint(payload: EmailInvestigationRequest):
-    data_dict = payload.model_dump()
-    analysis = engine.investigate(data_dict)
-    report = CybercrimeIncidentReportGenerator.generate_report(analysis, data_dict)
+def generate_report_endpoint(payload: EmailInvestigationRequest, ws: UserWorkspace = Depends(workspace)):
+    data = payload.model_dump()
+    analysis = ws.analyze_only(data)
+    from report_generator import CybercrimeIncidentReportGenerator
+    report = CybercrimeIncidentReportGenerator.generate_report(analysis, data)
     return {"report": report, "analysis": analysis}
 
+
+@app.post("/api/upload-eml")
+async def upload_eml_file(file: UploadFile = File(...), ws: UserWorkspace = Depends(workspace)):
+    content = await file.read()
+    try:
+        parsed = parse_eml_bytes(content)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse EML: {e}")
+    item = ws.process_new_email(parsed)
+    report = ws.get_report(item["incident_id"]) if item.get("incident_id") else None
+    return {"status": "SUCCESS", "item": item, "analysis": item["analysis"], "incident_report": report}
+
+
+# ---------------------------------------------------------------------------
+# sentinel (per-session inbox)
+# ---------------------------------------------------------------------------
 @app.get("/api/sentinel/stats")
-def get_sentinel_stats():
-    base_stats = sentinel.get_stats()
-    oauth_status = oauth_service.get_oauth_status()
-    base_stats["oauth"] = oauth_status
-    return base_stats
+def get_sentinel_stats(ws: UserWorkspace = Depends(workspace)):
+    return ws.get_stats()
+
 
 @app.get("/api/sentinel/inbox")
-def get_sentinel_inbox():
-    return {
-        "inbox": sentinel.inbox_items,
-        "quarantined": sentinel.quarantine_items,
-        "stats": get_sentinel_stats()
-    }
+def get_sentinel_inbox(ws: UserWorkspace = Depends(workspace)):
+    return {"inbox": ws.list_inbox(), "quarantined": ws.list_quarantine(), "stats": ws.get_stats()}
+
 
 @app.get("/api/sentinel/reports")
-def get_sentinel_reports():
-    return {"reports": sentinel.generated_reports}
+def get_sentinel_reports(ws: UserWorkspace = Depends(workspace)):
+    return {"reports": ws.list_reports()}
+
 
 @app.get("/api/sentinel/report/{incident_id}")
-def get_incident_report_by_id(incident_id: str):
-    for r in sentinel.generated_reports:
-        if r.get("incident_id") == incident_id:
-            return {"report": r}
-    raise HTTPException(status_code=404, detail="Incident report not found")
+def get_incident_report_by_id(incident_id: str, ws: UserWorkspace = Depends(workspace)):
+    report = ws.get_report(incident_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Incident report not found")
+    return {"report": report}
+
 
 @app.post("/api/sentinel/toggle-active")
-def toggle_monitoring(payload: ToggleMonitoringRequest):
-    return sentinel.set_monitoring_active(payload.active)
+def toggle_monitoring(payload: ToggleMonitoringRequest, ws: UserWorkspace = Depends(workspace)):
+    return ws.set_monitoring_active(payload.active)
+
 
 @app.post("/api/sentinel/scan-now")
-def trigger_manual_scan():
-    if oauth_service.tokens.get("is_connected"):
-        res = oauth_service.fetch_latest_messages_now()
-    else:
-        res = sentinel.poll_live_gmail()
-    return {"result": res, "stats": get_sentinel_stats()}
+def trigger_manual_scan(ws: UserWorkspace = Depends(workspace)):
+    res = ws.poll_live_gmail()
+    return {"result": res, "stats": ws.get_stats()}
+
 
 @app.post("/api/sentinel/quarantine-action")
-def perform_quarantine_action(payload: QuarantineActionRequest):
-    res = sentinel.toggle_quarantine(payload.email_id, payload.action)
+def perform_quarantine_action(payload: QuarantineActionRequest, ws: UserWorkspace = Depends(workspace)):
+    res = ws.toggle_quarantine(payload.email_id, payload.action)
     if not res:
         raise HTTPException(status_code=404, detail="Email item not found")
-    return {"status": "SUCCESS", "item": res, "stats": get_sentinel_stats()}
+    return {"status": "SUCCESS", "item": res, "stats": ws.get_stats()}
 
-@app.post("/api/sentinel/connect-gmail")
-def connect_user_gmail(payload: GmailConfigRequest):
-    if payload.app_password:
-        _guard_live_gmail()
-    res = sentinel.connect_gmail(payload.email, payload.app_password or "")
-    return res
 
 @app.post("/api/sentinel/simulate-incoming")
-def simulate_incoming_attack(sample_id: Optional[str] = "sample_ps02_paypal"):
-    target_sample = None
-    for s in SAMPLE_EMAILS:
-        if s["id"] == sample_id:
-            target_sample = dict(s)
-            break
-    if not target_sample:
-        target_sample = dict(SAMPLE_EMAILS[0])
-    
-    target_sample["id"] = f"live_sim_{int(time.time())}"
-    target_sample["date"] = "Just now (Live Threat)"
-    target_sample["recipient"] = "harinivash28082007@gmail.com"
-    processed = sentinel.process_new_email(target_sample)
-    return {"status": "INJECTED_AND_ANALYZED", "item": processed, "stats": get_sentinel_stats()}
+def simulate_incoming_attack(sample_id: Optional[str] = "sample_ps02_paypal", ws: UserWorkspace = Depends(workspace)):
+    item = ws.simulate_incoming(sample_id or "sample_ps02_paypal")
+    return {"status": "INJECTED_AND_ANALYZED", "item": item, "stats": ws.get_stats()}
 
-# Google OAuth endpoints
-@app.post("/api/auth/google/direct-token")
-def connect_with_direct_oauth_token(payload: DirectTokenRequest):
-    _guard_live_gmail()
-    res = oauth_service.connect_with_direct_token(payload.email, payload.access_token)
-    return res
 
-@app.post("/api/auth/google/save-credentials")
-def save_oauth_client_credentials(payload: OAuthClientCredsRequest):
-    _guard_live_gmail()
-    return oauth_service.save_client_credentials(payload.client_id, payload.client_secret)
+# ---------------------------------------------------------------------------
+# Gmail connection — app password only
+# ---------------------------------------------------------------------------
+@app.post("/api/gmail/connect")
+def connect_gmail(payload: GmailConnectRequest, ws: UserWorkspace = Depends(workspace)):
+    return ws.connect_gmail(payload.email, payload.app_password)
 
-@app.get("/api/auth/google/login")
-def start_google_oauth():
-    """Return the Google consent URL so the frontend can redirect the user."""
-    _guard_live_gmail()
-    if not oauth_service.has_client_credentials():
-        raise HTTPException(status_code=400, detail="Google OAuth client not configured yet.")
-    return {"auth_url": oauth_service.get_auth_url(), "redirect_uri": oauth_service.redirect_uri}
 
-@app.get("/api/auth/google/callback")
-def google_oauth_callback(code: Optional[str] = None, error: Optional[str] = None):
-    """Google redirects the browser here after consent; exchange the code then bounce home."""
-    if error:
-        return RedirectResponse(_home_redirect(f"gmail=error&reason={urllib.parse.quote(error)}"))
-    if not code:
-        return RedirectResponse(_home_redirect("gmail=error&reason=missing_code"))
-    res = oauth_service.exchange_code_for_tokens(code)
-    if res.get("status") == "SUCCESS":
-        return RedirectResponse(_home_redirect(f"gmail=connected&email={urllib.parse.quote(res.get('email', ''))}"))
-    return RedirectResponse(_home_redirect(f"gmail=error&reason={urllib.parse.quote(str(res.get('error', 'unknown'))[:180])}"))
+@app.post("/api/gmail/disconnect")
+def disconnect_gmail(ws: UserWorkspace = Depends(workspace)):
+    return ws.disconnect_gmail()
 
-@app.get("/api/auth/google/status")
-def get_google_oauth_status():
-    return oauth_service.get_oauth_status()
 
-@app.post("/api/auth/google/sync-now")
-def sync_oauth_gmail():
-    res = oauth_service.fetch_latest_messages_now()
-    return {"result": res, "stats": get_sentinel_stats()}
+@app.post("/api/gmail/sync-now")
+def sync_gmail(ws: UserWorkspace = Depends(workspace)):
+    res = ws.poll_live_gmail()
+    return {"result": res, "stats": ws.get_stats()}
 
-@app.post("/api/auth/google/disconnect")
-def disconnect_google_oauth():
-    return oauth_service.disconnect()
 
 # ---------------------------------------------------------------------------
 # Serve the built React frontend (production single-origin deploy)
@@ -393,7 +262,6 @@ if _static_dir_exists():
 
     @app.get("/{full_path:path}", include_in_schema=False)
     def _spa_fallback(full_path: str):
-        # Never swallow the API namespace
         if full_path.startswith("api/"):
             raise HTTPException(status_code=404, detail="Not found")
         candidate = _DIST / full_path

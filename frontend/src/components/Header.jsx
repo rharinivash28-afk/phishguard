@@ -1,25 +1,16 @@
 import React from 'react';
 import { Shield, ShieldAlert, Mail, Activity, Settings, Zap, Terminal } from 'lucide-react';
 
-function GoogleGlyph({ className = 'w-4 h-4' }) {
-  return (
-    <span className={`inline-flex items-center justify-center rounded-full bg-black text-white font-black ${className}`}>
-      G
-    </span>
-  );
-}
-
 export default function Header({
   activeTab,
   setActiveTab,
   stats,
   onOpenSettings,
-  onOpenOAuthModal,
-  onStartOAuthLogin,
+  onConnectGmail,
   onSimulateAttack,
 }) {
-  const isOAuthConnected = stats?.oauth?.is_connected || stats?.imap_connected;
-  const userEmail = stats?.oauth?.user_email || stats?.connected_email || 'harinivash28082007@gmail.com';
+  const isConnected = stats?.connected || stats?.imap_connected;
+  const userEmail = stats?.connected_email || '';
 
   const tabs = [
     { id: 'sentinel', label: 'Inbox Sentinel', Icon: Activity },
@@ -80,10 +71,10 @@ export default function Header({
               <span>Inject Phish</span>
             </button>
 
-            {isOAuthConnected ? (
+            {isConnected ? (
               <button
-                onClick={onOpenOAuthModal}
-                title="Gmail connected — click to switch account or disconnect"
+                onClick={onOpenSettings}
+                title="Gmail connected — click to manage or disconnect"
                 className="flex items-center gap-2 glass-soft px-3 py-1.5 cursor-pointer hover:bg-white/[0.09] transition"
               >
                 <span className="w-2 h-2 rounded-full shrink-0 dot-safe animate-pulse" />
@@ -92,12 +83,12 @@ export default function Header({
               </button>
             ) : (
               <button
-                onClick={onStartOAuthLogin}
-                title="Sign in with Google to connect your Gmail"
+                onClick={onConnectGmail}
+                title="Connect your Gmail with an app password"
                 className="flex items-center gap-2 rounded-lg bg-white text-black px-3 py-1.5 text-xs font-bold hover:bg-white/85 transition"
               >
-                <GoogleGlyph className="w-4 h-4 text-[10px]" />
-                <span>Sign in with Google</span>
+                <Mail className="w-4 h-4" />
+                <span>Connect Gmail</span>
               </button>
             )}
 

@@ -1,30 +1,60 @@
 import React, { useState } from 'react';
-import { X, Mail, Key, Check, RefreshCw, AlertCircle, ExternalLink, HelpCircle, Sparkles } from 'lucide-react';
+import { X, Mail, Key, Check, RefreshCw, AlertCircle, ExternalLink, Eye, EyeOff, LogOut, ShieldCheck } from 'lucide-react';
 
-export default function GmailSettingsModal({ stats, onClose, onSaveConfig, onToggleMonitoring, onTriggerScan }) {
-  const [email, setEmail] = useState(stats?.oauth?.user_email || stats?.connected_email || 'harinivash28082007@gmail.com');
+export default function GmailSettingsModal({
+  stats,
+  onClose,
+  onConnectGmail,
+  onDisconnectGmail,
+  onToggleMonitoring,
+  onTriggerScan,
+}) {
+  const connected = stats?.connected || stats?.imap_connected;
+  const connectedEmail = stats?.connected_email || '';
+
+  const [email, setEmail] = useState(connectedEmail);
   const [appPassword, setAppPassword] = useState('');
+  const [showPw, setShowPw] = useState(false);
   const [active, setActive] = useState(stats?.monitoring_active ?? true);
-  const [saved, setSaved] = useState(false);
-  const [testing, setTesting] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [scanning, setScanning] = useState(false);
 
-  const handleSubmit = async (e) => {
+  const pwLen = appPassword.replace(/\s+/g, '').length;
+
+  const handleConnect = async (e) => {
     e.preventDefault();
-    setTesting(true);
-    await onSaveConfig(email, appPassword);
-    await onToggleMonitoring(active);
-    setTesting(false);
-    setSaved(true);
-    setTimeout(() => { setSaved(false); onClose(); }, 1200);
+    if (!email || !appPassword) return;
+    setBusy(true);
+    setMsg(null);
+    const res = await onConnectGmail(email.trim(), appPassword);
+    setBusy(false);
+    if (res?.connected) {
+      setMsg({ ok: true, text: `Connected. ${res.new_emails_found ?? 0} recent messages pulled in.` });
+      setAppPassword('');
+    } else {
+      setMsg({ ok: false, text: res?.error || 'Gmail rejected the login. Check the steps below and retry.' });
+    }
   };
 
-  const handleSwitchToDemoMode = async () => {
-    setTesting(true);
-    await onSaveConfig(email, '');
-    await onToggleMonitoring(true);
-    setTesting(false);
-    setSaved(true);
-    setTimeout(() => { setSaved(false); onClose(); }, 1000);
+  const handleDisconnect = async () => {
+    setBusy(true);
+    await onDisconnectGmail();
+    setBusy(false);
+    setMsg(null);
+    setEmail('');
+  };
+
+  const handleScan = async () => {
+    setScanning(true);
+    await onTriggerScan?.();
+    setScanning(false);
+  };
+
+  const toggleActive = async () => {
+    const next = !active;
+    setActive(next);
+    await onToggleMonitoring?.(next);
   };
 
   return (
@@ -32,92 +62,135 @@ export default function GmailSettingsModal({ stats, onClose, onSaveConfig, onTog
       <div className="glass-hi w-full max-w-lg overflow-hidden">
         <div className="p-4 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-white/[0.06] text-white/80 border border-white/15"><Mail className="w-5 h-5" /></div>
+            <div className="w-9 h-9 rounded-xl bg-white text-black flex items-center justify-center"><Mail className="w-5 h-5" /></div>
             <div>
-              <h3 className="text-sm font-bold text-white">Gmail 24/7 Sentinel Guard</h3>
-              <p className="text-xs text-white/45">Automated phishing analysis &amp; quarantine</p>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-white">Connect your Gmail</h3>
+                <span className={`px-2 py-0.5 text-[9px] font-bold uppercase rounded-full border ${
+                  connected ? 'bg-white text-black border-white' : 'bg-white/[0.06] text-white/50 border-white/15'
+                }`}>
+                  {connected ? 'Connected' : 'Not connected'}
+                </span>
+              </div>
+              <p className="text-xs text-white/45">Read-only IMAP with a 16-character app password.</p>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 text-white/40 hover:text-white rounded-lg transition"><X className="w-5 h-5" /></button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs">
-          <div className="glass-soft p-4 flex items-center justify-between">
-            <div>
-              <p className="font-bold text-white text-xs flex items-center gap-1.5">
-                <span className={`w-2 h-2 rounded-full ${active ? 'bg-white animate-pulse' : 'bg-white/30'}`} />
-                24/7 Active Inbox Sentinel
+        <div className="p-6 space-y-4 text-xs">
+          {connected && (
+            <div className="glass-soft p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center font-bold uppercase">
+                    {(connectedEmail || 'G')[0]}
+                  </div>
+                  <div>
+                    <p className="font-bold text-white text-xs">Gmail — IMAP app password</p>
+                    <p className="text-[11px] text-white/50 font-mono">{connectedEmail}</p>
+                  </div>
+                </div>
+                <button onClick={handleDisconnect} disabled={busy} title="Disconnect & clear synced mail"
+                  className="p-2 rounded-xl bg-white/[0.06] border border-white/12 text-white/50 hover:text-white hover:bg-white/[0.12] transition">
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between pt-3 border-t border-white/10">
+                <div>
+                  <p className="font-bold text-white text-xs flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full ${active ? 'bg-white animate-pulse' : 'bg-white/30'}`} />
+                    24/7 background monitoring
+                  </p>
+                  <p className="text-[11px] text-white/45 mt-0.5">Scans your inbox every minute and auto-quarantines phishing.</p>
+                </div>
+                <button type="button" onClick={toggleActive}
+                  className={`w-12 h-6 flex items-center rounded-full p-1 transition ${active ? 'bg-white justify-end' : 'bg-white/15 justify-start'}`}>
+                  <div className={`w-4 h-4 rounded-full ${active ? 'bg-black' : 'bg-white/70'}`} />
+                </button>
+              </div>
+
+              <button type="button" onClick={handleScan} disabled={scanning} className="btn-ghost w-full">
+                <RefreshCw className={`w-3.5 h-3.5 ${scanning ? 'animate-spin' : ''}`} />
+                <span>{scanning ? 'Scanning…' : 'Scan now'}</span>
+              </button>
+            </div>
+          )}
+
+          {!connected && (
+            <form onSubmit={handleConnect} className="space-y-3">
+              <p className="text-[11px] text-white/50 leading-relaxed">
+                Enable IMAP in Gmail, generate a 16-character App Password (needs 2-Step Verification), and paste it here.
+                PhishGuard never sees your real password and only reads your mail.
               </p>
-              <p className="text-[11px] text-white/45 mt-0.5">Silently scans incoming mail and auto-blocks phishing threats.</p>
-            </div>
-            <button type="button" onClick={() => setActive(!active)}
-              className={`w-12 h-6 flex items-center rounded-full p-1 transition ${active ? 'bg-white justify-end' : 'bg-white/15 justify-start'}`}>
-              <div className={`w-4 h-4 rounded-full ${active ? 'bg-black' : 'bg-white/70'}`} />
-            </button>
-          </div>
 
-          <div className="glass-soft p-3 text-[11px] text-white/55 leading-relaxed flex items-start gap-2">
-            <Sparkles className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-            <span>The easiest way to connect is <strong className="text-white/80">Connect Gmail</strong> in the header (one-click Google sign-in). The fields below are an alternative using an IMAP app password.</span>
-          </div>
+              <div>
+                <label className="block text-[10px] font-semibold uppercase text-white/45 mb-1">Gmail address</label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-white/35 absolute left-3 top-2.5" />
+                  <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@gmail.com" className="glass-input pl-9" />
+                </div>
+              </div>
 
-          <div>
-            <label className="block text-[11px] font-semibold uppercase text-white/45 mb-1">Your monitored Gmail address</label>
-            <div className="relative">
-              <Mail className="w-4 h-4 text-white/35 absolute left-3 top-2.5" />
-              <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
-                placeholder="your.email@gmail.com" className="glass-input pl-9" />
-            </div>
-          </div>
+              <div>
+                <label className="block text-[10px] font-semibold uppercase text-white/45 mb-1">16-character App Password</label>
+                <div className="relative">
+                  <Key className="w-4 h-4 text-white/35 absolute left-3 top-2.5" />
+                  <input type={showPw ? 'text' : 'password'} required value={appPassword}
+                    onChange={(e) => setAppPassword(e.target.value)}
+                    placeholder="abcd efgh ijkl mnop" className="glass-input pl-9 pr-10 font-mono" />
+                  <button type="button" onClick={() => setShowPw((v) => !v)}
+                    className="absolute right-2.5 top-2 p-0.5 text-white/40 hover:text-white transition">
+                    {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {appPassword && <p className="mt-1 text-[10px] text-white/40 font-mono">{pwLen} / 16 characters</p>}
+              </div>
 
-          <div>
-            <div className="flex justify-between items-center mb-1">
-              <label className="block text-[11px] font-semibold uppercase text-white/45">16-letter Google app password</label>
-              <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer"
-                className="text-[11px] text-white/50 hover:text-white flex items-center gap-1">
-                <HelpCircle className="w-3.5 h-3.5" /><span>Get app password</span>
-              </a>
-            </div>
-            <div className="relative">
-              <Key className="w-4 h-4 text-white/35 absolute left-3 top-2.5" />
-              <input type="password" value={appPassword} onChange={(e) => setAppPassword(e.target.value)}
-                placeholder="celg uekr qlkq wpxr" className="glass-input pl-9 font-mono" />
-            </div>
-          </div>
-
-          <div className="glass-soft p-4 space-y-2 text-[11px] text-white/55">
-            <h5 className="font-bold text-white/80 uppercase tracking-wide flex items-center gap-1.5">
-              <AlertCircle className="w-4 h-4" /> If Gmail IMAP rejects authentication
-            </h5>
-            <p>
-              1. Enable IMAP in{' '}
-              <a href="https://mail.google.com/mail/u/0/#settings/fwdandpop" target="_blank" rel="noreferrer" className="text-white underline inline-flex items-center gap-0.5">
-                Gmail Settings → POP/IMAP <ExternalLink className="w-2.5 h-2.5" />
-              </a>, then Save Changes.
-            </p>
-            <p>2. Generate a fresh 16-letter app password while signed in as <code className="font-mono text-white/75">{email}</code>.</p>
-            <div className="pt-2 border-t border-white/10 flex items-center justify-between">
-              <span className="text-[10px] text-white/40">Want to test the full system right now?</span>
-              <button type="button" onClick={handleSwitchToDemoMode} className="btn-ghost">
-                <Sparkles className="w-3 h-3" /><span>Use simulated guard</span>
+              <button type="submit" disabled={busy} className="btn-primary w-full py-2.5">
+                {busy ? <><RefreshCw className="w-4 h-4 animate-spin" /><span>Connecting…</span></>
+                  : <><Check className="w-4 h-4" /><span>Connect Gmail</span></>}
               </button>
-            </div>
-          </div>
 
-          <div className="pt-2 flex flex-col sm:flex-row justify-between items-center gap-2">
-            <button type="button" onClick={onTriggerScan} className="btn-ghost w-full sm:w-auto">
-              <RefreshCw className="w-3.5 h-3.5" /><span>Test live scan</span>
-            </button>
-            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-              <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
-              <button type="submit" disabled={testing} className="btn-primary">
-                {testing ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /><span>Testing…</span></>
-                  : saved ? <><Check className="w-4 h-4" /><span>Saved</span></>
-                  : <span>Save &amp; connect</span>}
-              </button>
+              <ol className="list-decimal list-inside space-y-1 text-[11px] text-white/50 glass-soft p-3">
+                <li>
+                  Turn on{' '}
+                  <a className="text-white underline" target="_blank" rel="noreferrer" href="https://myaccount.google.com/signinoptions/two-step-verification">
+                    2-Step Verification <ExternalLink className="w-2.5 h-2.5 inline" />
+                  </a>
+                </li>
+                <li>
+                  Enable IMAP:{' '}
+                  <a className="text-white underline" target="_blank" rel="noreferrer" href="https://mail.google.com/mail/u/0/#settings/fwdandpop">
+                    Gmail → Forwarding and POP/IMAP <ExternalLink className="w-2.5 h-2.5 inline" />
+                  </a>{' '}→ &ldquo;Enable IMAP&rdquo; → Save.
+                </li>
+                <li>
+                  Generate an App Password:{' '}
+                  <a className="text-white underline" target="_blank" rel="noreferrer" href="https://myaccount.google.com/apppasswords">
+                    myaccount.google.com/apppasswords <ExternalLink className="w-2.5 h-2.5 inline" />
+                  </a>{' '}— name it &ldquo;PhishGuard&rdquo;, copy the 16 characters.
+                </li>
+              </ol>
+            </form>
+          )}
+
+          {msg && (
+            <div className={`glass-soft p-3 text-[11px] leading-relaxed ${msg.ok ? 'text-white/80' : 'text-white'}`}>
+              <div className="flex items-start gap-2">
+                {msg.ok ? <ShieldCheck className="w-3.5 h-3.5 mt-0.5 shrink-0" /> : <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />}
+                <p>{msg.text}</p>
+              </div>
             </div>
+          )}
+
+          <div className="flex items-center gap-1.5 text-[10px] text-white/35">
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>Read-only. App password encrypted at rest, scoped to this browser session, wiped on disconnect.</span>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );

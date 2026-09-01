@@ -9,3 +9,7 @@ backend/venv/
 *.log
 .vite/
 Screen Recording*.mp4
+
+# local dev database
+*.db
+backend/*.db

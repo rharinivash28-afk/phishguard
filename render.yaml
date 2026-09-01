@@ -12,26 +12,23 @@ services:
     envVars:
       - key: RENDER
         value: "true"
-      # DEMO_MODE (default ON in any hosted build): shows a "shared instance"
-      # banner and blocks the live-mailbox connect flows, because this build keeps
-      # one in-memory store shared by every visitor. Set to "0" only if you are the
-      # sole user of your own private instance.
-      - key: DEMO_MODE
-        value: "1"
-      # Allow live Gmail even with DEMO_MODE on (you accept that a connected
-      # mailbox is visible to everyone who opens the URL). Implied automatically
-      # when GOOGLE_CLIENT_ID/SECRET are set below.
-      # - key: ALLOW_LIVE_GMAIL
-      #   value: "1"
-      #
-      # Render sets RENDER_EXTERNAL_URL automatically; the app derives the OAuth
-      # redirect URI from it. Override here only if you use a custom domain.
-      # - key: GOOGLE_REDIRECT_URI
-      #   value: https://your-domain.com/api/auth/google/callback
-      #
-      # Optional: pre-seed Google OAuth so users skip the in-app setup step.
-      # Setting these also turns ALLOW_LIVE_GMAIL on.
-      # - key: GOOGLE_CLIENT_ID
-      #   sync: false
-      # - key: GOOGLE_CLIENT_SECRET
-      #   sync: false
+
+      # --- REQUIRED: external Postgres for per-user data ---------------------
+      # Free permanent options: Neon (neon.tech) or Supabase. Create a project,
+      # copy the connection string, paste it here (Render will prompt because of
+      # sync:false). Without it the app falls back to an ephemeral SQLite file
+      # that is wiped on every redeploy.
+      - key: DATABASE_URL
+        sync: false
+
+      # --- REQUIRED: encryption key for stored Gmail app passwords ----------
+      # Render generates a strong random value. If it ever changes, users just
+      # re-enter their app password.
+      - key: APP_SECRET_KEY
+        generateValue: true
+
+      # --- optional tuning -------------------------------------------------
+      # - key: SESSION_TTL_DAYS      # idle days before a workspace is swept
+      #   value: "14"
+      # - key: POLL_INTERVAL_SECONDS # background Gmail poll cadence
+      #   value: "60"
