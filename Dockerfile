@@ -1,15 +1,21 @@
 # ---------- Stage 1: build the React frontend ----------
-FROM node:20-slim AS frontend
+FROM node:20-bullseye-slim AS frontend
 WORKDIR /build
-COPY frontend/package*.json ./
-RUN npm ci
+
+# install deps first so this layer caches independently of source changes
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
 COPY frontend/ ./
+# Vite/rollup can spike past the default heap on small build boxes.
+ENV NODE_OPTIONS=--max-old-space-size=2048
 RUN npm run build          # -> /build/dist
 
 # ---------- Stage 2: Python API that also serves the built frontend ----------
-FROM python:3.11-slim AS runtime
+FROM python:3.11-slim-bullseye AS runtime
 ENV PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /app
 
