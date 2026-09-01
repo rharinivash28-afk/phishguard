@@ -19,6 +19,13 @@ LEGIT_DOMAINS = [
     "accounts.google.com", "outlook.office365.com", "login.microsoftonline.com",
     "teams.microsoft.com", "support.zendesk.com", "app.datadoghq.com",
     "sentry.io", "pagerduty.com", "vpn.corp.net", "crm.company.io",
+    # legit domains for the newly added brands — must stay clean
+    "open.spotify.com", "web.telegram.org", "discord.com", "twitch.tv",
+    "store.steampowered.com", "www.roblox.com", "www.ebay.com", "www.etsy.com",
+    "admin.shopify.com", "www.walmart.com", "www.target.com", "www.costco.com",
+    "account.venmo.com", "cash.app", "www.uber.com", "www.lyft.com",
+    "www.airbnb.com", "secure.booking.com", "tools.usps.com", "www.irs.gov",
+    "www.hmrc.gov.uk", "www.medicare.gov", "www.capitalone.com", "www.hsbc.com",
 ]
 
 # Domains that must still be flagged as brand impersonation.

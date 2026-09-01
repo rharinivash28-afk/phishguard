@@ -188,6 +188,20 @@ export default function DeepInvestigator({ initialEmail, samples, onGenerateRepo
                 </div>
               </div>
 
+              {analysis.ai_review && (
+                <div className="glass-soft p-4 space-y-1.5">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-white/70">AI analyst second opinion — {analysis.ai_review.risk}/100</h4>
+                  <p className="text-xs text-white/55 leading-relaxed">{analysis.ai_review.rationale}</p>
+                  {analysis.ai_review.red_flags?.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {analysis.ai_review.red_flags.map((f, i) => (
+                        <span key={i} className="px-2 py-0.5 text-[10px] font-mono rounded border border-white/15 bg-white/[0.05] text-white/60">{f}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="glass-soft p-4 space-y-2.5">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-white/70 mb-2">Multi-factor forensic vector breakdown</h4>
                 {Object.entries(analysis.score_breakdown || {}).map(([key, val]) => (

@@ -14,21 +14,39 @@ services:
         value: "true"
 
       # --- REQUIRED: external Postgres for per-user data ---------------------
-      # Free permanent options: Neon (neon.tech) or Supabase. Create a project,
-      # copy the connection string, paste it here (Render will prompt because of
-      # sync:false). Without it the app falls back to an ephemeral SQLite file
-      # that is wiped on every redeploy.
+      # Free permanent options: Neon (neon.tech) or Supabase. Paste the
+      # connection string here (Render prompts because of sync:false). Without
+      # it the app falls back to ephemeral SQLite, wiped on every redeploy.
       - key: DATABASE_URL
         sync: false
 
       # --- REQUIRED: encryption key for stored Gmail app passwords ----------
-      # Render generates a strong random value. If it ever changes, users just
-      # re-enter their app password.
       - key: APP_SECRET_KEY
         generateValue: true
 
-      # --- optional tuning -------------------------------------------------
-      # - key: SESSION_TTL_DAYS      # idle days before a workspace is swept
+      # --- external cron keeps polling alive while the free dyno sleeps -----
+      # Add a cron-job.org job: POST https://<app>/api/cron/poll-tick every 5 min
+      # with header  X-Cron-Key: <this value>
+      - key: CRON_SECRET
+        generateValue: true
+
+      # --- OPTIONAL integrations (paste to enable) -------------------------
+      # Google Safe Browsing v4 API key — URL reputation checks.
+      - key: GOOGLE_SAFE_BROWSING_KEY
+        sync: false
+      # NVIDIA build.nvidia.com API key (nvapi-...) — LLM second opinion on
+      # borderline emails. Model defaults to meta/llama-3.1-70b-instruct.
+      - key: NVIDIA_API_KEY
+        sync: false
+
+      # --- optional tuning -----------------------------------------------
+      # - key: SESSION_TTL_DAYS        # idle days before a workspace is swept
       #   value: "14"
-      # - key: POLL_INTERVAL_SECONDS # background Gmail poll cadence
+      # - key: POLL_INTERVAL_SECONDS   # in-process poll cadence
       #   value: "60"
+      # - key: INBOX_RETENTION_DAYS    # inbox history pruning window
+      #   value: "30"
+      # - key: MAX_SESSIONS            # new-workspace flood cap
+      #   value: "5000"
+      # - key: NVIDIA_MODEL
+      #   value: "meta/llama-3.1-70b-instruct"

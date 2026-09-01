@@ -5,7 +5,7 @@
 import runpy
 import sys
 
-MODULES = ["test_analyzer", "test_sessions"]
+MODULES = ["test_analyzer", "test_sessions", "test_security", "test_detection"]
 
 failed = []
 for mod in MODULES:

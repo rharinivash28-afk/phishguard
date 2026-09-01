@@ -3,10 +3,25 @@ import urllib.parse
 from typing import List, Dict, Any, Optional
 
 POPULAR_BRANDS = [
-    'paypal', 'microsoft', 'google', 'apple', 'amazon', 'netflix', 'chase',
-    'bank of america', 'wells fargo', 'dropbox', 'docusign', 'facebook',
-    'instagram', 'linkedin', 'adobe', 'stripe', 'zoom', 'coinbase', 'binance',
-    'citibank', 'american express', 'barclays', 'fedex', 'dhl', 'ups'
+    # finance / payments
+    'paypal', 'stripe', 'venmo', 'cashapp', 'zelle', 'revolut', 'wise',
+    'robinhood', 'chase', 'bank of america', 'wells fargo', 'citibank',
+    'american express', 'barclays', 'capitalone', 'hsbc', 'santander', 'natwest',
+    'tdbank', 'pnc',
+    # crypto
+    'coinbase', 'binance', 'kraken', 'kucoin', 'metamask', 'ledger',
+    # tech / cloud / productivity
+    'microsoft', 'google', 'apple', 'amazon', 'adobe', 'dropbox', 'docusign',
+    'zoom', 'slack', 'notion', 'github', 'gitlab', 'atlassian',
+    # social / comms
+    'facebook', 'instagram', 'linkedin', 'whatsapp', 'telegram', 'discord',
+    # media / shopping / gaming
+    'netflix', 'spotify', 'twitch', 'steam', 'epicgames', 'roblox', 'ebay',
+    'etsy', 'shopify', 'walmart', 'target', 'costco', 'bestbuy',
+    # travel / delivery
+    'uber', 'lyft', 'airbnb', 'booking', 'fedex', 'dhl', 'ups', 'usps', 'aramex',
+    # government / benefits
+    'irs', 'hmrc', 'medicare',
 ]
 
 # A benign word is roughly as close to a 3-letter brand ("ups", "dhl") as a
@@ -222,10 +237,11 @@ class PhishingInvestigationEngine:
             'indicators': indicators
         }
 
-    def analyze_urls(self, urls: List[Dict[str, str]]) -> Dict[str, Any]:
+    def analyze_urls(self, urls: List[Dict[str, str]], blocklist: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         indicators = []
         score = 0
         extracted_iocs = []
+        blocklist = blocklist or {}
 
         for item in urls:
             raw_url = item.get('url', '')
@@ -284,6 +300,17 @@ class PhishingInvestigationEngine:
                     score += 15
                     break
 
+            if raw_url in blocklist:
+                threat = blocklist[raw_url].replace("_", " ").title()
+                indicators.append({
+                    'type': 'SAFE_BROWSING_BLOCKLIST',
+                    'severity': 'CRITICAL',
+                    'weight': 45,
+                    'name': f'Google Safe Browsing Blocklist ({threat})',
+                    'detail': f"URL '{raw_url}' is on Google Safe Browsing's list of unsafe web resources ({threat})."
+                })
+                score += 45
+
             domain_res = self.analyze_domain(netloc)
             for ind in domain_res['indicators']:
                 if not any(existing['name'] == ind['name'] for existing in indicators):
@@ -291,7 +318,7 @@ class PhishingInvestigationEngine:
                     score += ind['weight']
 
         return {
-            'url_score': min(score, 50),
+            'url_score': min(score, 55),
             'indicators': indicators,
             'extracted_urls': extracted_iocs
         }
@@ -379,8 +406,16 @@ class PhishingInvestigationEngine:
 
         domain = extract_domain(sender_address)
 
+        # optional external URL reputation (no-op unless GOOGLE_SAFE_BROWSING_KEY set)
+        blocklist = {}
+        try:
+            from threat_intel import check_urls
+            blocklist = check_urls([u.get('url', '') for u in urls])
+        except Exception:
+            pass
+
         domain_analysis = self.analyze_domain(domain, display_name)
-        url_analysis = self.analyze_urls(urls)
+        url_analysis = self.analyze_urls(urls, blocklist)
         nlp_analysis = self.analyze_urgency_and_nlp(f"{subject} {body}")
         attachment_analysis = self.analyze_attachments(attachments)
 
@@ -453,6 +488,38 @@ class PhishingInvestigationEngine:
 
         risk_score = round(min(max(raw_composite, 0.0), 99.8), 1)
 
+        # Optional LLM second opinion — only for borderline scores, only when
+        # NVIDIA_API_KEY is set. It can raise concern, never lower it.
+        ai_review = None
+        try:
+            from llm_review import is_enabled, llm_verdict
+            if is_enabled() and 30.0 <= risk_score <= 75.0:
+                verdict_ai = llm_verdict({
+                    'sender_address': sender_address, 'display_name': display_name,
+                    'subject': subject, 'body': body, 'urls': urls,
+                    'attachments': attachments, 'spf_status': spf_status,
+                    'dkim_status': dkim_status, 'dmarc_status': dmarc_status,
+                })
+                if verdict_ai:
+                    ai_review = verdict_ai
+                    if verdict_ai['risk'] >= risk_score + 15:
+                        unique_indicators.append({
+                            'type': 'AI_MODEL_FLAGGED',
+                            'severity': 'HIGH',
+                            'weight': 25,
+                            'name': 'AI Model Flagged as Phishing',
+                            'detail': (
+                                f"An AI classifier rated this {verdict_ai['risk']}/100: "
+                                f"{verdict_ai['rationale']}"
+                            ),
+                        })
+                        raw_composite = max(raw_composite, min(verdict_ai['risk'], 88.0))
+                        risk_score = round(min(max(raw_composite, 0.0), 99.8), 1)
+                        critical_count = sum(1 for i in unique_indicators if i['severity'] == 'CRITICAL')
+                        high_count = sum(1 for i in unique_indicators if i['severity'] == 'HIGH')
+        except Exception:
+            pass
+
         if risk_score >= 70:
             verdict = 'PHISHING_ATTACK'
             verdict_label = 'Confirmed Phishing / Malicious'
@@ -494,5 +561,6 @@ class PhishingInvestigationEngine:
                 'urgency_nlp': nlp_analysis['urgency_score'],
                 'attachments': attachment_analysis['attachment_score'],
                 'header_auth': min(header_score, 40)
-            }
+            },
+            'ai_review': ai_review,
         }

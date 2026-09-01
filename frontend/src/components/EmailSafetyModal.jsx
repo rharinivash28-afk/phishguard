@@ -89,6 +89,23 @@ export default function EmailSafetyModal({
             </div>
           )}
 
+          {/* AI second opinion */}
+          {analysis.ai_review && (
+            <div className="glass-soft p-3 space-y-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-white/55 flex items-center gap-1.5">
+                <ShieldAlert className="w-3.5 h-3.5" /> AI analyst second opinion — {analysis.ai_review.risk}/100
+              </span>
+              <p className="text-[11px] text-white/60 leading-relaxed">{analysis.ai_review.rationale}</p>
+              {analysis.ai_review.red_flags?.length > 0 && (
+                <div className="flex flex-wrap gap-1 pt-0.5">
+                  {analysis.ai_review.red_flags.map((f, i) => (
+                    <span key={i} className="px-1.5 py-0.5 text-[10px] font-mono rounded border border-white/15 bg-white/[0.05] text-white/60">{f}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Actions */}
           <div className="glass-soft p-4 space-y-3">
             <h5 className="font-bold text-white text-xs uppercase tracking-wide">{isThreat ? 'Choose an action:' : 'Email actions:'}</h5>

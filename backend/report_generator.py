@@ -43,11 +43,14 @@ class CybercrimeIncidentReportGenerator:
             
         for att in email_raw_data.get('attachments', []):
             att_name = att.get('filename', 'payload.bin')
-            att_hash = hashlib.sha256(att_name.encode()).hexdigest()
+            # real payload hash when we have it (IMAP / .eml parse); else fall back
+            # to hashing the filename so the field is never empty.
+            real_hash = att.get('sha256')
             iocs['attachment_hashes'].append({
                 'artifact_type': 'ATTACHMENT_PAYLOAD',
                 'filename': att_name,
-                'sha256': att_hash
+                'sha256': real_hash or hashlib.sha256(att_name.encode()).hexdigest(),
+                'hash_source': 'file_content' if real_hash else 'filename_only',
             })
 
         # MITRE ATT&CK Mappings

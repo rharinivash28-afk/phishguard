@@ -50,7 +50,7 @@ export default function LiveSentinel({
       display_name: customSender.split('@')[0] || 'Sender',
       subject: customSubject || 'Suspicious Email Verification',
       body: customBody || 'Please click to verify your account credentials immediately.',
-      recipient: 'harinivash28082007@gmail.com',
+      recipient: 'you@example.com',
       urls: [],
       attachments: []
     });

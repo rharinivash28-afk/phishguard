@@ -5,6 +5,7 @@ knows how to talk to Gmail over IMAP and turn a raw message into the dict shape
 the analyzer expects.
 """
 import email
+import hashlib
 import imaplib
 import re
 import time
@@ -12,6 +13,41 @@ import urllib.parse
 import uuid
 from email.header import decode_header
 from typing import Any, Dict, List
+
+try:
+    from bs4 import BeautifulSoup
+except Exception:  # pragma: no cover
+    BeautifulSoup = None
+
+_MAX_HASH_BYTES = 10 * 1024 * 1024  # 10 MB — cap attachment hashing work
+_URL_RE = re.compile(r'https?://[^\s<>"\'\)]+')
+
+
+def _extract_from_html(html: str) -> tuple[str, list[dict]]:
+    """Return (visible_text, [{url, anchor}]) from an HTML email body."""
+    if not html:
+        return "", []
+    if BeautifulSoup is None:
+        text = re.sub(r"<[^>]+>", " ", html)
+        return re.sub(r"\s+", " ", text).strip(), [
+            {"url": u, "anchor": ""} for u in _URL_RE.findall(html)
+        ]
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "head", "title"]):
+        tag.decompose()
+    links: list[dict] = []
+    for a in soup.find_all("a", href=True):
+        href = a["href"].strip()
+        if href.lower().startswith(("http://", "https://")):
+            links.append({"url": href, "anchor": a.get_text(" ", strip=True)[:200]})
+    text = re.sub(r"\s+", " ", soup.get_text(" ", strip=True)).strip()
+    # also catch bare URLs sitting in the text
+    seen = {l["url"] for l in links}
+    for u in _URL_RE.findall(text):
+        if u not in seen:
+            links.append({"url": u, "anchor": ""})
+            seen.add(u)
+    return text, links
 
 
 def decode_mime_words(s) -> str:
@@ -70,26 +106,53 @@ def _parse_message(msg, email_addr: str) -> Dict[str, Any]:
     clean_sender = sender.split("<")[-1].strip(">").strip() if "<" in sender else sender
 
     body = ""
+    html_body = ""
     attachments: List[Dict[str, Any]] = []
     if msg.is_multipart():
         for part in msg.walk():
             content_type = part.get_content_type()
             disposition = str(part.get("Content-Disposition"))
             if "attachment" in disposition:
+                raw = part.get_payload(decode=True) or b""
                 filename = decode_mime_words(part.get_filename() or "attachment.bin")
-                attachments.append(
-                    {"filename": filename, "size": len(part.get_payload(decode=True) or b"")}
-                )
+                att = {"filename": filename, "size": len(raw)}
+                if 0 < len(raw) <= _MAX_HASH_BYTES:
+                    att["sha256"] = hashlib.sha256(raw).hexdigest()
+                attachments.append(att)
             elif content_type == "text/plain" and not body:
                 payload = part.get_payload(decode=True)
                 if payload:
                     body = payload.decode(errors="ignore")
+            elif content_type == "text/html" and not html_body:
+                payload = part.get_payload(decode=True)
+                if payload:
+                    html_body = payload.decode(errors="ignore")
     else:
         payload = msg.get_payload(decode=True)
         if payload:
-            body = payload.decode(errors="ignore")
+            decoded = payload.decode(errors="ignore")
+            if msg.get_content_type() == "text/html":
+                html_body = decoded
+            else:
+                body = decoded
 
-    urls = [{"url": u, "anchor": ""} for u in re.findall(r'https?://[^\s<>"\'\)]+', body)]
+    # Prefer the plain-text part; fall back to visible text + links from HTML.
+    html_links: list[dict] = []
+    if not body and html_body:
+        body, html_links = _extract_from_html(html_body)
+    elif html_body:
+        _, html_links = _extract_from_html(html_body)
+
+    urls = [{"url": u, "anchor": ""} for u in _URL_RE.findall(body)]
+    seen_urls = {u["url"] for u in urls}
+    for link in html_links:
+        if link["url"] not in seen_urls:
+            urls.append(link)
+            seen_urls.add(link["url"])
+        elif link.get("anchor"):
+            for u in urls:  # backfill anchor text onto a bare URL we already had
+                if u["url"] == link["url"] and not u["anchor"]:
+                    u["anchor"] = link["anchor"]
 
     auth_res = msg.get("Authentication-Results", "").lower()
     spf = "PASS" if "spf=pass" in auth_res else ("FAIL" if "spf=fail" in auth_res else "UNKNOWN")

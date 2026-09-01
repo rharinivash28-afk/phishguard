@@ -51,7 +51,13 @@ app = FastAPI(
 )
 
 # ---- rate limiting (in-memory; one dyno) --------------------------------------
-limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
+# RATE_LIMIT_ENABLED=0 turns it off for tests / local load work.
+_RL_ON = os.environ.get("RATE_LIMIT_ENABLED", "1").lower() not in ("0", "false", "no")
+limiter = Limiter(
+    key_func=get_remote_address,
+    default_limits=["120/minute"] if _RL_ON else [],
+    enabled=_RL_ON,
+)
 app.state.limiter = limiter
 
 
@@ -97,6 +103,7 @@ class UrlItem(BaseModel):
 class AttachmentItem(BaseModel):
     filename: str
     size: Optional[int] = 0
+    sha256: Optional[str] = None
 
 
 class EmailInvestigationRequest(BaseModel):
