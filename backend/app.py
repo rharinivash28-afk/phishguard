@@ -53,10 +53,21 @@ app = FastAPI(
 # ---- rate limiting (in-memory; one dyno) --------------------------------------
 # RATE_LIMIT_ENABLED=0 turns it off for tests / local load work.
 _RL_ON = os.environ.get("RATE_LIMIT_ENABLED", "1").lower() not in ("0", "false", "no")
+
+
+def _client_key(request: Request) -> str:
+    """Real client IP — Render/Fly sit behind a proxy so trust X-Forwarded-For."""
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return get_remote_address(request)
+
+
 limiter = Limiter(
-    key_func=get_remote_address,
+    key_func=_client_key,
     default_limits=["120/minute"] if _RL_ON else [],
     enabled=_RL_ON,
+    headers_enabled=False,  # routes return plain dicts; header injection would break them
 )
 app.state.limiter = limiter
 
