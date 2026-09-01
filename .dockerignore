@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/__pycache__
+**/*.pyc
+**/.env
+**/.venv
+backend/venv
+*.log
+.git
+.gitignore
+Screen Recording*.mp4
+frontend/.vite

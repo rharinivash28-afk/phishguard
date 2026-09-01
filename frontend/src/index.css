@@ -1,0 +1,208 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =========================================================
+   PhishGuard — Glassmorphism • Black & White theme
+   ========================================================= */
+
+:root {
+  color-scheme: dark;
+}
+
+@layer base {
+  html,
+  body {
+    background-color: #08080b;
+    color: rgba(255, 255, 255, 0.92);
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+
+  body {
+    min-height: 100vh;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  /* Ambient monochrome light field behind the glass */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background:
+      radial-gradient(48rem 48rem at 8% -12%, rgba(255, 255, 255, 0.18), transparent 60%),
+      radial-gradient(42rem 42rem at 108% 4%, rgba(255, 255, 255, 0.12), transparent 58%),
+      radial-gradient(60rem 38rem at 50% 118%, rgba(255, 255, 255, 0.09), transparent 60%),
+      linear-gradient(180deg, #101014 0%, #08080b 55%, #050506 100%);
+  }
+
+  /* Fine grain / noise so the frosted panels read as glass */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.5;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
+  }
+
+  ::selection {
+    background: rgba(255, 255, 255, 0.85);
+    color: #050505;
+  }
+}
+
+@layer components {
+  /* Frosted glass surfaces ---------------------------------- */
+  .glass {
+    @apply bg-white/[0.07] backdrop-blur-2xl border border-white/[0.14] rounded-2xl;
+    box-shadow:
+      0 12px 48px -16px rgba(0, 0, 0, 0.75),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.14),
+      inset 0 -1px 0 0 rgba(0, 0, 0, 0.25);
+  }
+
+  .glass-hi {
+    @apply bg-white/[0.11] backdrop-blur-3xl border border-white/20 rounded-2xl;
+    box-shadow:
+      0 32px 90px -24px rgba(0, 0, 0, 0.85),
+      0 0 0 1px rgba(255, 255, 255, 0.04),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.2);
+  }
+
+  .glass-soft {
+    @apply bg-white/[0.05] backdrop-blur-lg border border-white/10 rounded-xl;
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+  }
+
+  /* Form controls ------------------------------------------ */
+  .glass-input {
+    @apply w-full bg-white/[0.05] border border-white/15 rounded-lg px-3 py-2 text-xs text-white/90
+           placeholder-white/30 outline-none transition
+           focus:border-white/50 focus:bg-white/[0.09];
+  }
+
+  select.glass-input option {
+    background: #0c0c0c;
+    color: #fff;
+  }
+
+  /* Buttons ----------------------------------------------- */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold
+           bg-white text-black transition hover:bg-white/85 disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold
+           bg-white/[0.06] text-white/80 border border-white/12 transition
+           hover:bg-white/[0.12] hover:text-white;
+  }
+
+  /* Status pills (monochrome) ----------------------------- */
+  .pill-danger {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider
+           bg-white text-black;
+  }
+
+  .pill-safe {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider
+           bg-white/[0.06] text-white/70 border border-white/15;
+  }
+
+  .pill-muted {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold
+           bg-white/[0.05] text-white/55 border border-white/10;
+  }
+}
+
+/* Risk emphasis — grayscale weighting ---------------------- */
+.risk-high {
+  color: #ff6b6b;
+  text-shadow: 0 0 18px rgba(255, 80, 80, 0.45);
+}
+.risk-med {
+  color: #ffcf5c;
+}
+.risk-low {
+  color: #57e08a;
+}
+
+/* =========================================================
+   Phishing / safe verdict accents (the only colour in the UI)
+   ========================================================= */
+:root {
+  --danger: 255, 92, 92;   /* red  */
+  --safe:   74, 222, 128;   /* green */
+}
+
+/* Left status rail on email rows */
+.rail-danger { border-left: 3px solid rgb(var(--danger)); box-shadow: -1px 0 16px -6px rgba(var(--danger), 0.55); }
+.rail-safe   { border-left: 3px solid rgb(var(--safe));   box-shadow: -1px 0 16px -6px rgba(var(--safe),   0.45); }
+
+/* Full-card verdict frame (modals, forensic result) */
+.frame-danger {
+  border-color: rgba(var(--danger), 0.55) !important;
+  box-shadow:
+    0 0 0 1px rgba(var(--danger), 0.25),
+    0 24px 70px -24px rgba(0, 0, 0, 0.85),
+    0 0 42px -8px rgba(var(--danger), 0.35);
+}
+.frame-safe {
+  border-color: rgba(var(--safe), 0.5) !important;
+  box-shadow:
+    0 0 0 1px rgba(var(--safe), 0.22),
+    0 24px 70px -24px rgba(0, 0, 0, 0.85),
+    0 0 42px -10px rgba(var(--safe), 0.3);
+}
+
+/* Coloured verdict pills */
+.pill-verdict-danger {
+  @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider;
+  background: rgba(var(--danger), 0.16);
+  color: #ff8585;
+  border: 1px solid rgba(var(--danger), 0.45);
+}
+.pill-verdict-safe {
+  @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider;
+  background: rgba(var(--safe), 0.16);
+  color: #6ee7a0;
+  border: 1px solid rgba(var(--safe), 0.42);
+}
+
+/* Soft tinted panel behind a verdict block */
+.tint-danger { background: rgba(var(--danger), 0.08); border: 1px solid rgba(var(--danger), 0.3); }
+.tint-safe   { background: rgba(var(--safe), 0.08);   border: 1px solid rgba(var(--safe), 0.28); }
+
+.dot-danger { background: rgb(var(--danger)); box-shadow: 0 0 10px rgba(var(--danger), 0.8); }
+.dot-safe   { background: rgb(var(--safe));   box-shadow: 0 0 10px rgba(var(--safe), 0.7); }
+
+/* Toast animation ---------------------------------------- */
+@keyframes slide-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+.animate-slide-in {
+  animation: slide-in 0.25s ease-out;
+}
+
+/* Scrollbar --------------------------------------------- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
+  background-clip: content-box;
+}

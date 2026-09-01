@@ -1,0 +1,11 @@
+node_modules/
+dist/
+__pycache__/
+*.pyc
+.env
+backend/.env
+.venv/
+backend/venv/
+*.log
+.vite/
+Screen Recording*.mp4
