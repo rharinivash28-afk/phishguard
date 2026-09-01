@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Header from './components/Header';
 import LiveSentinel from './components/LiveSentinel';
 import DeepInvestigator from './components/DeepInvestigator';
@@ -6,18 +6,35 @@ import IncidentReports from './components/IncidentReports';
 import IncidentModal from './components/IncidentModal';
 import GmailSettingsModal from './components/GmailSettingsModal';
 import EmailSafetyModal from './components/EmailSafetyModal';
+import { loadCache, saveCache, clearConnection } from './lib/persist';
 
-// every request must carry the session cookie
+// every request carries the session cookie
 const api = (path, opts = {}) =>
   fetch(path, { credentials: 'include', ...opts }).then((r) => r);
 
 export default function App() {
+  const cache = useRef(loadCache());
+
   const [activeTab, setActiveTab] = useState('sentinel');
   const [inbox, setInbox] = useState([]);
-  const [stats, setStats] = useState(null);
-  const [samples, setSamples] = useState([]);
+  // hydrate metrics instantly from the last known good state, then reconcile
+  const [stats, setStats] = useState(cache.current.lastStats);
+  const [presets, setPresets] = useState([]);
   const [reports, setReports] = useState([]);
+  const [config, setConfig] = useState({ durations: [1, 4, 12, 24, null], default_duration_hours: 24 });
   const [sessionReady, setSessionReady] = useState(false);
+  const [connection, setConnection] = useState(() => {
+    const c = cache.current;
+    return c.connected
+      ? {
+          connected: true,
+          email: c.email,
+          expires_at: c.expiresAt,
+          permanent: c.durationHours === null,
+          seconds_remaining: c.expiresAt ? Math.max(0, Math.floor((Date.parse(c.expiresAt) - Date.now()) / 1000)) : null,
+        }
+      : { connected: false, status: 'AWAITING_CONNECTION' };
+  });
 
   const [selectedEmailForInspection, setSelectedEmailForInspection] = useState(null);
   const [activeReportModal, setActiveReportModal] = useState(null);
@@ -30,7 +47,7 @@ export default function App() {
     setTimeout(() => setNotification(null), 4000);
   };
 
-  const gmailConnected = stats?.connected || stats?.imap_connected;
+  const gmailConnected = connection.connected;
 
   const fetchData = async () => {
     try {
@@ -41,25 +58,62 @@ export default function App() {
       ]);
       setInbox(inboxRes.inbox || []);
       setStats(inboxRes.stats || null);
-      setSamples(samplesRes.samples || []);
+      setPresets(samplesRes.presets || []);
       setReports(reportsRes.reports || []);
+      saveCache({ lastStats: inboxRes.stats || null, lastInboxCount: (inboxRes.inbox || []).length });
     } catch (err) {
       console.error('Error fetching data:', err);
     }
   };
 
-  // establish the session cookie first, then start polling
+  const fetchConnectionStatus = async () => {
+    try {
+      const s = await api('/api/gmail/status').then((r) => r.json());
+      setConnection(s);
+      if (s.connected) {
+        saveCache({
+          connected: true,
+          email: s.email || '',
+          durationHours: s.duration_hours ?? (s.permanent ? null : cache.current.durationHours),
+          connectedAt: s.connected_at || null,
+          expiresAt: s.expires_at || null,
+        });
+      } else {
+        if (s.status === 'EXPIRED' && cache.current.connected) {
+          showNotification('Gmail session expired — connection closed and synced mail cleared', 'info');
+          setInbox([]);
+          setReports([]);
+        }
+        clearConnection();
+        cache.current = loadCache();
+      }
+      cache.current = loadCache();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // establish the session cookie + load config first
   useEffect(() => {
-    api('/api/session')
-      .then(() => setSessionReady(true))
-      .catch(() => setSessionReady(true));
+    Promise.all([
+      api('/api/session').then((r) => r.json()).catch(() => null),
+      api('/api/config').then((r) => r.json()).catch(() => null),
+    ]).then(([, cfg]) => {
+      if (cfg) setConfig(cfg);
+      setSessionReady(true);
+    });
   }, []);
 
   useEffect(() => {
-    if (!sessionReady) return;
+    if (!sessionReady) return undefined;
     fetchData();
-    const interval = setInterval(fetchData, 6000);
-    return () => clearInterval(interval);
+    fetchConnectionStatus();
+    const dataIv = setInterval(fetchData, 6000);
+    const connIv = setInterval(fetchConnectionStatus, 10000);
+    return () => {
+      clearInterval(dataIv);
+      clearInterval(connIv);
+    };
   }, [sessionReady]);
 
   const handleQuarantineToggle = async (emailId, action) => {
@@ -89,7 +143,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
       });
       const data = await res.json();
-      showNotification('New phishing threat injected & auto-quarantined', 'danger');
+      showNotification('Simulated phishing threat injected & auto-quarantined', 'danger');
       fetchData();
       if (data.item) setActiveSafetyModalItem(data.item);
     } catch (err) {
@@ -186,24 +240,32 @@ export default function App() {
     }
   };
 
-  const handleConnectGmail = async (email, appPassword) => {
+  // returns the raw response so the modal can drive its progress bar
+  const handleConnectGmail = async (email, appPassword, durationHours) => {
+    saveCache({ durationHours: durationHours ?? null });
+    cache.current = loadCache();
     try {
       const res = await api('/api/gmail/connect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, app_password: appPassword }),
+        body: JSON.stringify({ email, app_password: appPassword, duration_hours: durationHours }),
       });
       const data = await res.json();
       if (data.connected) {
-        showNotification(`Gmail connected — monitoring ${email} (${data.new_emails_found ?? 0} messages pulled)`, 'success');
+        showNotification(
+          `Gmail connected — monitoring ${email} (${data.new_emails_found ?? 0} messages pulled)`,
+          'success'
+        );
+        setInbox([]); // purge any stale view immediately
+        await fetchConnectionStatus();
+        await fetchData();
       } else {
         showNotification(data.error || 'Gmail rejected the login.', 'danger');
       }
-      fetchData();
       return data;
     } catch (err) {
       console.error(err);
-      return { connected: false, error: 'Network error reaching the backend.' };
+      return { connected: false, error: 'Network error reaching the backend.', phases: [] };
     }
   };
 
@@ -211,6 +273,11 @@ export default function App() {
     try {
       await api('/api/gmail/disconnect', { method: 'POST' });
       showNotification('Gmail disconnected — your synced mail was cleared', 'info');
+      clearConnection();
+      cache.current = loadCache();
+      setConnection({ connected: false, status: 'AWAITING_CONNECTION' });
+      setInbox([]);
+      setReports([]);
       fetchData();
     } catch (err) {
       console.error(err);
@@ -238,7 +305,15 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
       });
       const data = await res.json();
-      showNotification(`Scan complete — ${data.result?.new_emails_found ?? 0} new emails processed`, 'success');
+      const r = data.result || {};
+      if (r.status === 'TRANSIENT') {
+        showNotification('Temporary network issue — connection kept, will retry', 'info');
+      } else if (r.status === 'EXPIRED') {
+        showNotification('Gmail session expired', 'info');
+        await fetchConnectionStatus();
+      } else {
+        showNotification(`Scan complete — ${r.new_emails_found ?? 0} new emails processed`, 'success');
+      }
       fetchData();
     } catch (err) {
       console.error(err);
@@ -249,11 +324,13 @@ export default function App() {
     try {
       await api('/api/session/wipe', { method: 'POST' });
       showNotification('Your workspace and all data were wiped', 'info');
+      clearConnection();
+      cache.current = loadCache();
       setInbox([]);
       setReports([]);
+      setConnection({ connected: false, status: 'AWAITING_CONNECTION' });
       setActiveSafetyModalItem(null);
       setSelectedEmailForInspection(null);
-      // new cookie + fresh seed on next call
       await api('/api/session');
       fetchData();
     } catch (err) {
@@ -276,6 +353,7 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         stats={stats}
+        connection={connection}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onConnectGmail={() => setIsSettingsOpen(true)}
         onSimulateAttack={handleSimulateAttack}
@@ -285,8 +363,8 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex items-center gap-3 text-[11px]">
           <span className="pill-muted shrink-0">Private workspace</span>
           <p className="text-white/50 flex-1 leading-relaxed">
-            This browser has its own isolated inbox — nobody else can see it. Your Gmail app password is stored
-            encrypted and only used to fetch your mail.
+            Zero-PII offline forensics. This browser has its own isolated inbox — nobody else can see it. Your Gmail
+            app password is stored encrypted and only used to read your mail.
           </p>
           <button onClick={handleWipeWorkspace} className="text-white/40 hover:text-white/80 transition shrink-0 font-mono" title="Delete everything in this workspace">
             Wipe my data
@@ -315,7 +393,7 @@ export default function App() {
         {activeTab === 'investigator' && (
           <DeepInvestigator
             initialEmail={selectedEmailForInspection}
-            samples={samples}
+            presets={presets}
             onGenerateReport={handleGenerateReportFromInvestigator}
             onViewReport={handleViewReport}
           />
@@ -328,8 +406,8 @@ export default function App() {
 
       <footer className="border-t border-white/10 py-4 text-center text-xs text-white/35 font-mono">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row justify-between items-center gap-2">
-          <span>PhishGuard AI • Personal Inbox Sentinel</span>
-          <span>Gmail app-password • Real-time classification • Auto-quarantine</span>
+          <span>PhishGuard AI • Enterprise Inbox Sentinel</span>
+          <span>App-password IMAP • 4-tier deterministic engine • STIX 2.1</span>
         </div>
       </footer>
 
@@ -350,6 +428,9 @@ export default function App() {
       {isSettingsOpen && (
         <GmailSettingsModal
           stats={stats}
+          connection={connection}
+          config={config}
+          defaultDuration={cache.current.durationHours}
           onClose={() => setIsSettingsOpen(false)}
           onConnectGmail={handleConnectGmail}
           onDisconnectGmail={handleDisconnectGmail}

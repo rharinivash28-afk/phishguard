@@ -1,16 +1,19 @@
 import React from 'react';
 import { Shield, ShieldAlert, Mail, Activity, Settings, Zap, Terminal } from 'lucide-react';
+import CountdownBadge from './CountdownBadge';
 
 export default function Header({
   activeTab,
   setActiveTab,
   stats,
+  connection,
   onOpenSettings,
   onConnectGmail,
   onSimulateAttack,
 }) {
-  const isConnected = stats?.connected || stats?.imap_connected;
-  const userEmail = stats?.connected_email || '';
+  const isConnected = connection?.connected || stats?.connected || stats?.imap_connected;
+  const userEmail = connection?.email || stats?.connected_email || '';
+  const expiresAtMs = connection?.expires_at ? Date.parse(connection.expires_at) : null;
 
   const tabs = [
     { id: 'sentinel', label: 'Inbox Sentinel', Icon: Activity },
@@ -36,9 +39,9 @@ export default function Header({
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-extrabold text-lg tracking-tight text-white">PhishGuard AI</span>
-                <span className="hidden sm:inline pill-muted">PS-02 Sentinel</span>
+                <span className="hidden sm:inline pill-muted">Enterprise Inbox Sentinel</span>
               </div>
-              <p className="text-xs text-white/40 hidden sm:block">24/7 Phishing Forensics &amp; Cybercrime Defense</p>
+              <p className="text-xs text-white/40 hidden sm:block">Zero-PII phishing forensics &amp; cybercrime reporting</p>
             </div>
           </div>
 
@@ -72,15 +75,22 @@ export default function Header({
             </button>
 
             {isConnected ? (
-              <button
-                onClick={onOpenSettings}
-                title="Gmail connected — click to manage or disconnect"
-                className="flex items-center gap-2 glass-soft px-3 py-1.5 cursor-pointer hover:bg-white/[0.09] transition"
-              >
-                <span className="w-2 h-2 rounded-full shrink-0 dot-safe animate-pulse" />
-                <Mail className="w-3.5 h-3.5 text-white/70 shrink-0" />
-                <span className="font-mono text-xs text-white/85 font-semibold truncate max-w-[160px]">{userEmail}</span>
-              </button>
+              <>
+                <CountdownBadge
+                  expiresAt={expiresAtMs}
+                  permanent={!!connection?.permanent}
+                  onClick={onOpenSettings}
+                />
+                <button
+                  onClick={onOpenSettings}
+                  title="Gmail connected — click to manage or disconnect"
+                  className="hidden sm:flex items-center gap-2 glass-soft px-3 py-1.5 cursor-pointer hover:bg-white/[0.09] transition"
+                >
+                  <span className="w-2 h-2 rounded-full shrink-0 dot-safe animate-pulse" />
+                  <Mail className="w-3.5 h-3.5 text-white/70 shrink-0" />
+                  <span className="font-mono text-xs text-white/85 font-semibold truncate max-w-[150px]">{userEmail}</span>
+                </button>
+              </>
             ) : (
               <button
                 onClick={onConnectGmail}

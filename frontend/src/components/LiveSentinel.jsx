@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import {
   ShieldAlert, ShieldCheck, Lock, Unlock, FileText, RefreshCw, Zap, Search,
-  Eye, CheckCircle2, AlertOctagon, Mail, PlusCircle, Send, Upload
+  Eye, CheckCircle2, AlertOctagon, Mail, MailX, PlusCircle, Send, Upload
 } from 'lucide-react';
 
 export default function LiveSentinel({
@@ -71,9 +71,9 @@ export default function LiveSentinel({
   };
 
   const metrics = [
-    { label: 'Total Scanned', value: stats?.total_emails_scanned ?? 0, sub: '24/7 real-time sentinel', Icon: RefreshCw, tone: 'neutral' },
+    { label: 'Total Scanned', value: stats?.total_emails_scanned ?? 0, sub: gmailConnected ? 'Real-time inbox sentinel' : 'Connect Gmail to begin', Icon: RefreshCw, tone: 'neutral' },
     { label: 'Threats Blocked', value: stats?.threats_blocked ?? 0, sub: 'Quarantined from inbox', Icon: ShieldAlert, tone: 'danger' },
-    { label: 'Safe Deliveries', value: stats?.safe_delivered ?? 0, sub: 'SPF / DKIM verified', Icon: ShieldCheck, tone: 'safe' },
+    { label: 'Safe Deliveries', value: stats?.safe_delivered ?? 0, sub: 'SPF / DKIM / DMARC verified', Icon: ShieldCheck, tone: 'safe' },
   ];
 
   return (
@@ -86,8 +86,8 @@ export default function LiveSentinel({
             <div>
               <h3 className="text-sm font-bold text-white">Connect your Gmail for live monitoring</h3>
               <p className="text-xs text-white/45 mt-0.5">
-                Read-only, with a 16-character app password. Until then you're seeing demo mail &mdash; and you can still
-                paste, upload, or simulate emails below.
+                Read-only IMAP with a 16-character app password and a session duration you choose. You can also
+                paste, upload, or simulate emails below to test the engine.
               </p>
             </div>
           </div>
@@ -131,7 +131,7 @@ export default function LiveSentinel({
             </p>
             <p className="text-[11px] text-white/40 mt-1 flex items-center gap-1">
               <span className={`w-1.5 h-1.5 rounded-full ${gmailConnected ? 'bg-white animate-pulse' : 'bg-white/30'}`} />
-              {gmailConnected ? 'Live Gmail guard active' : 'Demo guard active'}
+              {gmailConnected ? 'Live Gmail guard active' : 'Awaiting connection'}
             </p>
           </div>
           <div className="w-12 h-12 rounded-xl bg-white/[0.06] border border-white/12 flex items-center justify-center text-white/70">
@@ -237,7 +237,22 @@ export default function LiveSentinel({
         </div>
 
         <div className="divide-y divide-white/[0.06] max-h-[600px] overflow-y-auto">
-          {filteredItems.length === 0 ? (
+          {!gmailConnected ? (
+            <div className="p-14 text-center">
+              <div className="w-16 h-16 mx-auto rounded-2xl bg-white/[0.06] border border-white/12 flex items-center justify-center mb-4">
+                <MailX className="w-8 h-8 text-white/40" />
+              </div>
+              <p className="text-base font-bold text-white">To see your mail, connect your Gmail to this website</p>
+              <p className="text-xs text-white/45 mt-1.5 max-w-md mx-auto leading-relaxed">
+                Read-only IMAP · your inbox stays private to this browser · nothing is stored except an encrypted
+                app password. Or test the engine directly with paste / upload / simulate above.
+              </p>
+              <button onClick={onConnectGmail} className="btn-primary mt-5">
+                <Mail className="w-4 h-4" />
+                <span>Connect Gmail</span>
+              </button>
+            </div>
+          ) : filteredItems.length === 0 ? (
             <div className="p-12 text-center text-white/40">
               <ShieldCheck className="w-12 h-12 mx-auto text-white/20 mb-2" />
               <p className="text-sm font-medium">No emails match your filter</p>

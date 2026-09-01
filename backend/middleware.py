@@ -3,15 +3,16 @@ import os
 
 _IS_PROD = bool(os.environ.get("RENDER") or os.environ.get("PORT") or os.environ.get("FLY_APP_NAME"))
 
-# The SPA is self-contained (no external CDNs). 'unsafe-inline' for styles covers
-# the small inline <style> Tailwind's build can emit and React's inline style props.
+# Scripts are self-hosted only. Styles allow Google Fonts' stylesheet host and the
+# inline styles Tailwind's build / React style props emit; font files come from
+# fonts.gstatic.com. Everything else is same-origin.
 _CSP = (
     "default-src 'self'; "
     "img-src 'self' data:; "
-    "style-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
     "script-src 'self'; "
     "connect-src 'self'; "
-    "font-src 'self' data:; "
+    "font-src 'self' data: https://fonts.gstatic.com; "
     "base-uri 'self'; "
     "form-action 'self'; "
     "frame-ancestors 'none'"

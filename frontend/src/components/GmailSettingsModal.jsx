@@ -1,22 +1,37 @@
 import React, { useState } from 'react';
-import { X, Mail, Key, Check, RefreshCw, AlertCircle, ExternalLink, Eye, EyeOff, LogOut, ShieldCheck } from 'lucide-react';
+import { X, Mail, Key, Check, RefreshCw, AlertCircle, ExternalLink, Eye, EyeOff, LogOut, ShieldCheck, Clock } from 'lucide-react';
+import ConnectProgress from './ConnectProgress';
+
+const DURATION_LABELS = { 1: '1 hour', 4: '4 hours', 12: '12 hours', 24: '24 hours' };
+const durationLabel = (h) => (h === null || h === undefined ? 'Permanent' : DURATION_LABELS[h] || `${h} hours`);
 
 export default function GmailSettingsModal({
   stats,
+  connection,
+  config,
+  defaultDuration,
   onClose,
   onConnectGmail,
   onDisconnectGmail,
   onToggleMonitoring,
   onTriggerScan,
 }) {
-  const connected = stats?.connected || stats?.imap_connected;
-  const connectedEmail = stats?.connected_email || '';
+  const connected = connection?.connected || stats?.connected || stats?.imap_connected;
+  const connectedEmail = connection?.email || stats?.connected_email || '';
+
+  const durations = config?.durations ?? [1, 4, 12, 24, null];
+  const initialDuration =
+    defaultDuration !== undefined ? defaultDuration : (config?.default_duration_hours ?? 24);
 
   const [email, setEmail] = useState(connectedEmail);
   const [appPassword, setAppPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
+  const [duration, setDuration] = useState(initialDuration);
   const [active, setActive] = useState(stats?.monitoring_active ?? true);
   const [busy, setBusy] = useState(false);
+  const [phases, setPhases] = useState(null);
+  const [connectError, setConnectError] = useState(null);
+  const [connectDone, setConnectDone] = useState(false);
   const [msg, setMsg] = useState(null);
   const [scanning, setScanning] = useState(false);
 
@@ -27,12 +42,27 @@ export default function GmailSettingsModal({
     if (!email || !appPassword) return;
     setBusy(true);
     setMsg(null);
-    const res = await onConnectGmail(email.trim(), appPassword);
+    setPhases(null);
+    setConnectError(null);
+    setConnectDone(false);
+
+    const durVal = duration === 'null' ? null : duration;
+    const res = await onConnectGmail(email.trim(), appPassword, durVal);
+
     setBusy(false);
+    setPhases(res?.phases || []);
     if (res?.connected) {
-      setMsg({ ok: true, text: `Connected. ${res.new_emails_found ?? 0} recent messages pulled in.` });
+      setConnectDone(true);
+      setMsg({
+        ok: true,
+        text: res.note
+          ? res.note
+          : `Connected — ${res.new_emails_found ?? 0} recent messages pulled in. Session: ${durationLabel(durVal)}.`,
+      });
       setAppPassword('');
+      setTimeout(() => onClose(), 1400);
     } else {
+      setConnectError(res?.error || 'Gmail rejected the login.');
       setMsg({ ok: false, text: res?.error || 'Gmail rejected the login. Check the steps below and retry.' });
     }
   };
@@ -97,6 +127,20 @@ export default function GmailSettingsModal({
                 </button>
               </div>
 
+              {connection?.expires_at || connection?.permanent ? (
+                <div className="flex items-center gap-2 text-[11px] text-white/55 pt-2 border-t border-white/10">
+                  <Clock className="w-3.5 h-3.5 text-white/40" />
+                  <span>
+                    Session duration: <span className="text-white/80 font-semibold">
+                      {connection.permanent ? 'Permanent' : durationLabel(connection.duration_hours)}
+                    </span>
+                    {connection.expires_at && !connection.permanent && (
+                      <> · expires {new Date(connection.expires_at).toLocaleString()}</>
+                    )}
+                  </span>
+                </div>
+              ) : null}
+
               <div className="flex items-center justify-between pt-3 border-t border-white/10">
                 <div>
                   <p className="font-bold text-white text-xs flex items-center gap-1.5">
@@ -148,6 +192,31 @@ export default function GmailSettingsModal({
                 </div>
                 {appPassword && <p className="mt-1 text-[10px] text-white/40 font-mono">{pwLen} / 16 characters</p>}
               </div>
+
+              <div>
+                <label className="block text-[10px] font-semibold uppercase text-white/45 mb-1">Connection duration</label>
+                <div className="relative">
+                  <Clock className="w-4 h-4 text-white/35 absolute left-3 top-2.5" />
+                  <select
+                    value={duration === null ? 'null' : duration}
+                    onChange={(e) => setDuration(e.target.value === 'null' ? null : Number(e.target.value))}
+                    className="glass-input pl-9 appearance-none"
+                  >
+                    {durations.map((d) => (
+                      <option key={d === null ? 'perm' : d} value={d === null ? 'null' : d}>
+                        {durationLabel(d)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <p className="mt-1 text-[10px] text-white/40">
+                  When it ends, the connection closes automatically and synced mail is cleared. Permanent = no expiry.
+                </p>
+              </div>
+
+              {(busy || phases) && (
+                <ConnectProgress active={busy} phases={phases} error={connectError} done={connectDone} />
+              )}
 
               <button type="submit" disabled={busy} className="btn-primary w-full py-2.5">
                 {busy ? <><RefreshCw className="w-4 h-4 animate-spin" /><span>Connecting…</span></>

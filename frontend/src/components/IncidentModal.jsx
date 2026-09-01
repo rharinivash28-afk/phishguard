@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, ShieldAlert, Download, Copy, Printer, Check, Terminal, Lock } from 'lucide-react';
+import { X, ShieldAlert, Download, Copy, Printer, Check, Terminal, Lock, FileJson } from 'lucide-react';
 
 export default function IncidentModal({ report, onClose }) {
   const [copied, setCopied] = React.useState(false);
@@ -20,6 +20,16 @@ export default function IncidentModal({ report, onClose }) {
     const a = document.createElement('a');
     a.href = url;
     a.download = `${report.incident_id}_CYBERCRIME_REPORT.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadStix = () => {
+    const blob = new Blob([JSON.stringify(report.stix_bundle, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${report.incident_id}.stix.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -54,9 +64,14 @@ export default function IncidentModal({ report, onClose }) {
               {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
               <span className="hidden sm:inline">{copied ? 'Copied' : 'Copy'}</span>
             </button>
-            <button onClick={handleDownload} className="btn-ghost" title="Download markdown">
-              <Download className="w-4 h-4" /><span className="hidden sm:inline">Export</span>
+            <button onClick={handleDownload} className="btn-ghost" title="Download the dossier as Markdown">
+              <Download className="w-4 h-4" /><span className="hidden sm:inline">Dossier</span>
             </button>
+            {report.stix_bundle && (
+              <button onClick={handleDownloadStix} className="btn-ghost" title="Download the STIX 2.1 threat-intel bundle">
+                <FileJson className="w-4 h-4" /><span className="hidden sm:inline">STIX 2.1</span>
+              </button>
+            )}
             <button onClick={handlePrint} className="btn-ghost" title="Print">
               <Printer className="w-4 h-4" /><span className="hidden sm:inline">Print</span>
             </button>
