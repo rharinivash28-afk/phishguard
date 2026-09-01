@@ -10,13 +10,29 @@ their identity — no login. Each session is a private workspace: its own inbox,
 quarantine, incident reports, and Gmail connection, all stored in Postgres keyed by
 the session id. One session can never see another's mail. A "Wipe my data" button
 deletes the session and everything under it; idle workspaces are swept after
-`SESSION_TTL_DAYS` (default 14).
+`SESSION_TTL_DAYS` (default 30). The browser also keeps a `localStorage` mirror of
+connection state + last-known metrics so a reload repaints instantly.
 
 Gmail is connected with a **16-character app password** (read-only IMAP). The
 password is encrypted at rest with `APP_SECRET_KEY` and only decrypted in-process
 to run the poll. There is no Google OAuth — `gmail.readonly` OAuth needs app
 verification (owned domain, privacy policy, security review) and caps unverified
 apps at 100 users, so app-password is the only path.
+
+**Connection duration:** on connect the user picks 1h / 4h / 12h / 24h / Permanent.
+When it lapses the connection is torn down server-side (row deleted, synced mail
+cleared) — enforced on every poll *and* by the background `poller` every pass, so it
+happens even with the browser closed. A 1-second countdown badge shows the time
+left. Transient network errors never drop a live connection; only a real
+credential rejection (or 5 straight transient failures) does.
+
+**Empty until connected:** a fresh workspace shows an empty inbox with a "connect
+your Gmail" prompt — no demo mail. The bundled sample emails are Deep-Forensics
+presets and the "Simulate" button only.
+
+**STIX 2.1:** every incident report carries a `stix_bundle` (identity, indicators
+with STIX patterns, email/file SCOs with real SHA-256, MITRE attack-patterns,
+`indicates` relationships) downloadable as `<incident_id>.stix.json`.
 
 ## Prerequisites — a free Postgres database
 
@@ -77,7 +93,7 @@ on every redeploy — fine for a quick look, not for real use.
 - `APP_SECRET_KEY` must stay stable — if it changes, stored app passwords can't be
   decrypted and users just reconnect.
 - Schema changes run automatically via Alembic on startup (`alembic upgrade head`).
-- Workspaces with no activity for `SESSION_TTL_DAYS` (default 14) are auto-deleted;
+- Workspaces with no activity for `SESSION_TTL_DAYS` (default 30) are auto-deleted;
   the app warns the user when they're within 3 days.
 
 ## Option B — Fly.io (always-on, no sleep)
