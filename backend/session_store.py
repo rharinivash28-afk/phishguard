@@ -7,14 +7,15 @@ after SESSION_TTL_DAYS of inactivity and are swept lazily.
 import datetime
 import os
 
-from fastapi import Depends, Request, Response
-from sqlalchemy import delete, select
+from fastapi import Depends, HTTPException, Request, Response
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session as OrmSession
 
 from db import Session, SessionLocal
 
 COOKIE_NAME = "pg_session"
 TTL_DAYS = int(os.environ.get("SESSION_TTL_DAYS", "14"))
+MAX_SESSIONS = int(os.environ.get("MAX_SESSIONS", "5000"))
 _IS_PROD = bool(os.environ.get("RENDER") or os.environ.get("PORT") or os.environ.get("FLY_APP_NAME"))
 
 
@@ -62,6 +63,17 @@ def get_or_create_session(request: Request, response: Response, db: OrmSession) 
     """Return the caller's Session row, minting one (and the cookie) if needed."""
     row = _load_valid(db, request.cookies.get(COOKIE_NAME, ""))
     if row is None:
+        # flood guard: refuse *new* workspaces past the cap (existing ones keep working)
+        total = db.execute(select(func.count()).select_from(Session)).scalar() or 0
+        if total >= MAX_SESSIONS:
+            # opportunistically prune before giving up
+            sweep_expired(db)
+            total = db.execute(select(func.count()).select_from(Session)).scalar() or 0
+            if total >= MAX_SESSIONS:
+                raise HTTPException(
+                    status_code=503,
+                    detail="PhishGuard is at capacity for new workspaces right now — try again later.",
+                )
         row = Session()
         db.add(row)
         db.commit()

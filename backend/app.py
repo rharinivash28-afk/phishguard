@@ -12,21 +12,28 @@ _ROOT = os.path.dirname(_HERE)
 load_dotenv(os.path.join(_HERE, ".env"))
 load_dotenv(os.path.join(_ROOT, ".env.local"))
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session as OrmSession
 from typing import List, Optional
+import secrets
 import time
 
 from db import Session, init_db
 from gmail_service import parse_eml_bytes
+from middleware import security_headers
 from session_store import get_db, require_session
 from test_samples import SAMPLE_EMAILS
 from user_workspace import UserWorkspace
-from poller import start_poller
+from poller import run_tick, start_poller
+
+CRON_SECRET = os.environ.get("CRON_SECRET", "").strip()
 
 
 @asynccontextmanager
@@ -38,10 +45,27 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     title="PhishGuard AI — Personal Inbox Sentinel",
-    version="4.0.0",
+    version="4.1.0",
     description="Multi-factor phishing forensics with a private per-user workspace and Gmail app-password monitoring.",
     lifespan=lifespan,
 )
+
+# ---- rate limiting (in-memory; one dyno) --------------------------------------
+limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
+app.state.limiter = limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Too many requests — slow down and try again in a minute."},
+    )
+
+
+app.middleware("http")(security_headers)
 
 # Same-origin in prod (the UI is served from this process). Localhost:5173 in dev
 # for the Vite dev server. Override with CORS_ALLOW_ORIGINS (comma-separated).
@@ -112,6 +136,21 @@ def workspace(
     return ws
 
 
+def _session_expiry_days(session: Session) -> Optional[int]:
+    """Days until this session is swept for inactivity — only when < 3 (a nudge)."""
+    import datetime
+
+    from session_store import TTL_DAYS
+
+    last = session.last_seen_at
+    if last is None:
+        return None
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=datetime.timezone.utc)
+    remaining = TTL_DAYS - (datetime.datetime.now(datetime.timezone.utc) - last).days
+    return remaining if remaining < 3 else None
+
+
 # ---------------------------------------------------------------------------
 # meta
 # ---------------------------------------------------------------------------
@@ -126,9 +165,14 @@ def get_public_config():
 
 
 @app.get("/api/session")
-def touch_session(session: Session = Depends(require_session)):
+@limiter.limit("30/minute")
+def touch_session(request: Request, session: Session = Depends(require_session)):
     """Called on first load so the cookie is set before polling begins."""
-    return {"session": session.id[:8], "monitoring_active": session.monitoring_active}
+    out = {"session": session.id[:8], "monitoring_active": session.monitoring_active}
+    expires_in = _session_expiry_days(session)
+    if expires_in is not None:
+        out["expires_in_days"] = expires_in
+    return out
 
 
 @app.post("/api/session/wipe")
@@ -149,7 +193,8 @@ def get_sample_emails():
 # analysis
 # ---------------------------------------------------------------------------
 @app.post("/api/analyze")
-def analyze_email(payload: EmailInvestigationRequest, ws: UserWorkspace = Depends(workspace)):
+@limiter.limit("30/minute")
+def analyze_email(request: Request, payload: EmailInvestigationRequest, ws: UserWorkspace = Depends(workspace)):
     data = payload.model_dump()
     analysis = ws.analyze_only(data)
     item = ws.process_new_email(data)
@@ -158,7 +203,8 @@ def analyze_email(payload: EmailInvestigationRequest, ws: UserWorkspace = Depend
 
 
 @app.post("/api/generate-report")
-def generate_report_endpoint(payload: EmailInvestigationRequest, ws: UserWorkspace = Depends(workspace)):
+@limiter.limit("30/minute")
+def generate_report_endpoint(request: Request, payload: EmailInvestigationRequest, ws: UserWorkspace = Depends(workspace)):
     data = payload.model_dump()
     analysis = ws.analyze_only(data)
     from report_generator import CybercrimeIncidentReportGenerator
@@ -167,7 +213,8 @@ def generate_report_endpoint(payload: EmailInvestigationRequest, ws: UserWorkspa
 
 
 @app.post("/api/upload-eml")
-async def upload_eml_file(file: UploadFile = File(...), ws: UserWorkspace = Depends(workspace)):
+@limiter.limit("30/minute")
+async def upload_eml_file(request: Request, file: UploadFile = File(...), ws: UserWorkspace = Depends(workspace)):
     content = await file.read()
     try:
         parsed = parse_eml_bytes(content)
@@ -233,7 +280,8 @@ def simulate_incoming_attack(sample_id: Optional[str] = "sample_ps02_paypal", ws
 # Gmail connection — app password only
 # ---------------------------------------------------------------------------
 @app.post("/api/gmail/connect")
-def connect_gmail(payload: GmailConnectRequest, ws: UserWorkspace = Depends(workspace)):
+@limiter.limit("6/minute")
+def connect_gmail(request: Request, payload: GmailConnectRequest, ws: UserWorkspace = Depends(workspace)):
     return ws.connect_gmail(payload.email, payload.app_password)
 
 
@@ -246,6 +294,16 @@ def disconnect_gmail(ws: UserWorkspace = Depends(workspace)):
 def sync_gmail(ws: UserWorkspace = Depends(workspace)):
     res = ws.poll_live_gmail()
     return {"result": res, "stats": ws.get_stats()}
+
+
+# ---------------------------------------------------------------------------
+# external cron — keeps polling alive while the free dyno would otherwise sleep
+# ---------------------------------------------------------------------------
+@app.post("/api/cron/poll-tick")
+def cron_poll_tick(x_cron_key: Optional[str] = Header(default=None)):
+    if not CRON_SECRET or not x_cron_key or not secrets.compare_digest(x_cron_key, CRON_SECRET):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return run_tick(time_budget_s=25.0)
 
 
 # ---------------------------------------------------------------------------

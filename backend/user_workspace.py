@@ -19,6 +19,8 @@ from test_samples import SAMPLE_EMAILS
 
 _engine = PhishingInvestigationEngine()
 _SEEN_CAP = 500
+_BODY_CAP = 20_000       # chars of email body persisted per message
+_LIST_CAP = 50           # max urls / attachments stored per message
 QUARANTINE_THRESHOLD = 50
 
 
@@ -80,6 +82,15 @@ class UserWorkspace:
     # ingest / analyze
     # ------------------------------------------------------------------
     def _ingest(self, email_data: Dict[str, Any], *, from_seed: bool = False) -> InboxItem:
+        # bound what we persist per message so one big email can't bloat the DB
+        email_data = dict(email_data)
+        if isinstance(email_data.get("body"), str) and len(email_data["body"]) > _BODY_CAP:
+            email_data["body"] = email_data["body"][:_BODY_CAP] + "\n…[truncated]"
+        if isinstance(email_data.get("urls"), list):
+            email_data["urls"] = email_data["urls"][:_LIST_CAP]
+        if isinstance(email_data.get("attachments"), list):
+            email_data["attachments"] = email_data["attachments"][:_LIST_CAP]
+
         analysis = _engine.investigate(email_data)
         is_quarantined = analysis["risk_score"] >= QUARANTINE_THRESHOLD
 
