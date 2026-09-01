@@ -4,6 +4,7 @@
 **/*.pyc
 **/*.db
 **/.env
+**/.env.local
 **/.venv
 backend/venv
 *.log
@@ -11,3 +12,7 @@ backend/venv
 .gitignore
 Screen Recording*.mp4
 frontend/.vite
+.neon
+neon.ts
+skills-lock.json
+.claude

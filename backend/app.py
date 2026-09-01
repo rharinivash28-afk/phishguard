@@ -5,7 +5,12 @@ from contextlib import asynccontextmanager
 import uvicorn
 from dotenv import load_dotenv
 
-load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.dirname(_HERE)
+# backend/.env for hand-set local secrets, then the repo-root .env.local that
+# `neon link` writes (DATABASE_URL etc.). Neither overrides real env vars (Render).
+load_dotenv(os.path.join(_HERE, ".env"))
+load_dotenv(os.path.join(_ROOT, ".env.local"))
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware

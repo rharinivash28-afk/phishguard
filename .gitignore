@@ -13,3 +13,5 @@ Screen Recording*.mp4
 # local dev database
 *.db
 backend/*.db
+.neon
+.env.local
