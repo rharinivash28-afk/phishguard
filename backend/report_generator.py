@@ -32,20 +32,43 @@ class CybercrimeIncidentReportGenerator:
         indicators = analysis_result.get('indicators', [])
         suspicious = risk_score >= 50
 
-        # A forensic dossier lists the links that matter, not every tracking
-        # pixel — de-dupe, drop obvious unsubscribe/list links, and cap. Only
-        # keep URLs at all when the verdict is suspicious.
+        # A forensic dossier lists only the links that are themselves suspicious
+        # for THIS message — not every tracking pixel. A link counts if:
+        #   (a) an indicator explicitly names it, or
+        #   (b) its host is off-brand: a different registrable domain from the
+        #       sender (a phish rarely links back to the domain it spoofs).
+        # De-dupe by path, drop unsubscribe/list-management links, cap at 8.
+        try:
+            from analyzer import extract_domain
+        except Exception:  # pragma: no cover
+            def extract_domain(v):
+                return (v or '').split('/')[-1]
+
+        def _reg(host):
+            parts = (host or '').lower().split('.')
+            return '.'.join(parts[-2:]) if len(parts) >= 2 else (host or '').lower()
+
+        sender_reg = _reg(domain)
+        flagged_text = ' '.join(
+            (ind.get('detail') or '') for ind in indicators
+        )
+
         _seen = set()
-        deduped = []
+        picked = []
         for u in analysis_result.get('extracted_urls', []):
             base = u.split('?')[0]
             if base in _seen:
                 continue
-            if any(s in u.lower() for s in ('unsubscribe', '/asm/', 'list-unsubscribe')):
+            low = u.lower()
+            if any(s in low for s in ('unsubscribe', '/asm/', 'list-unsubscribe', 'mkt_unsubscribe')):
                 continue
-            _seen.add(base)
-            deduped.append(u)
-        extracted_urls = deduped[:8] if suspicious else []
+            url_reg = _reg(extract_domain(u))
+            off_brand = bool(sender_reg) and bool(url_reg) and url_reg != sender_reg
+            named = u in flagged_text
+            if suspicious and (off_brand or named):
+                _seen.add(base)
+                picked.append(u)
+        extracted_urls = picked[:8]
 
         # Compile Indicators of Compromise (IoCs)
         iocs = {
