@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Mail, Key, Check, RefreshCw, AlertCircle, ExternalLink, Eye, EyeOff, LogOut, ShieldCheck, Clock } from 'lucide-react';
 import ConnectProgress from './ConnectProgress';
+import Modal from './Modal';
 
 const DURATION_LABELS = { 1: '1 hour', 4: '4 hours', 12: '12 hours', 24: '24 hours' };
 const durationLabel = (h) => (h === null || h === undefined ? 'Permanent' : DURATION_LABELS[h] || `${h} hours`);
@@ -88,8 +89,7 @@ export default function GmailSettingsModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md overflow-y-auto">
-      <div className="glass-hi w-full max-w-lg overflow-hidden">
+    <Modal onClose={onClose} maxWidth="max-w-lg">
         <div className="p-4 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-white text-black flex items-center justify-center"><Mail className="w-5 h-5" /></div>
@@ -260,7 +260,6 @@ export default function GmailSettingsModal({
             <span>Read-only. App password encrypted at rest, scoped to this browser session, wiped on disconnect.</span>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

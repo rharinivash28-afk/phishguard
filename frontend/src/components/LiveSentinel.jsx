@@ -237,7 +237,7 @@ export default function LiveSentinel({
         </div>
 
         <div className="divide-y divide-white/[0.06] max-h-[600px] overflow-y-auto">
-          {!gmailConnected ? (
+          {!gmailConnected && (inbox || []).length === 0 ? (
             <div className="p-14 text-center">
               <div className="w-16 h-16 mx-auto rounded-2xl bg-white/[0.06] border border-white/12 flex items-center justify-center mb-4">
                 <MailX className="w-8 h-8 text-white/40" />
@@ -255,7 +255,9 @@ export default function LiveSentinel({
           ) : filteredItems.length === 0 ? (
             <div className="p-12 text-center text-white/40">
               <ShieldCheck className="w-12 h-12 mx-auto text-white/20 mb-2" />
-              <p className="text-sm font-medium">No emails match your filter</p>
+              <p className="text-sm font-medium">
+                {(inbox || []).length === 0 ? 'No emails yet — connect Gmail or use paste / upload / simulate' : 'No emails match your filter'}
+              </p>
             </div>
           ) : (
             filteredItems.map((item) => {

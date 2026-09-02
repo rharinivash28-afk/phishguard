@@ -2,6 +2,7 @@ import React from 'react';
 import {
   X, ShieldAlert, ShieldCheck, Lock, Eye, FileText, AlertOctagon, Mail
 } from 'lucide-react';
+import Modal from './Modal';
 
 export default function EmailSafetyModal({
   emailItem,
@@ -18,8 +19,7 @@ export default function EmailSafetyModal({
   const gmailUrl = emailItem.gmail_web_url || `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(emailItem.subject)}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md overflow-y-auto">
-      <div className={`glass-hi w-full max-w-2xl overflow-hidden ${isThreat ? 'frame-danger' : 'frame-safe'}`}>
+    <Modal onClose={onClose} maxWidth="max-w-2xl" panelClassName={isThreat ? 'frame-danger' : 'frame-safe'}>
         {/* Header */}
         <div className="p-4 flex items-center justify-between border-b border-white/10">
           <div className="flex items-center gap-2.5">
@@ -144,7 +144,6 @@ export default function EmailSafetyModal({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

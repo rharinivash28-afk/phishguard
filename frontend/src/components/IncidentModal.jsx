@@ -1,5 +1,6 @@
 import React from 'react';
 import { X, ShieldAlert, Download, Copy, Printer, Check, Terminal, Lock, FileJson } from 'lucide-react';
+import Modal from './Modal';
 
 export default function IncidentModal({ report, onClose }) {
   const [copied, setCopied] = React.useState(false);
@@ -45,8 +46,7 @@ export default function IncidentModal({ report, onClose }) {
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md overflow-y-auto">
-      <div className="glass-hi w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
+    <Modal onClose={onClose} maxWidth="max-w-4xl" panelClassName="flex flex-col max-h-[90vh]">
         {/* Top bar */}
         <div className="p-4 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -166,7 +166,6 @@ export default function IncidentModal({ report, onClose }) {
           <span className="text-[11px] text-white/35 font-mono">PhishGuard AI Incident Engine v2.0 • Cryptographically Verified</span>
           <button onClick={onClose} className="btn-ghost">Close dossier</button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
