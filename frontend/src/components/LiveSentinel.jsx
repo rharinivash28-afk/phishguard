@@ -107,16 +107,16 @@ export default function LiveSentinel({
         <div className="glass p-3.5 sm:p-4 flex items-center justify-between gap-2">
           <div className="min-w-0">
             <p className="text-[10px] sm:text-[11px] font-semibold text-white/45 uppercase tracking-wide leading-tight">Monitored Mailbox</p>
-            <p className={`text-sm font-bold mt-1 font-mono truncate ${gmailConnected ? 'text-white/90' : 'text-white/55'}`} title={stats?.connected_email || 'Not connected'}>
+            <p className={`text-[13px] sm:text-sm font-bold mt-1 font-mono truncate ${gmailConnected ? 'text-white/90' : 'text-white/55'}`} title={stats?.connected_email || 'Not connected'}>
               {stats?.connected_email || 'Not connected'}
             </p>
             <p className="text-[10px] sm:text-[11px] text-white/40 mt-0.5 flex items-center gap-1">
               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${gmailConnected ? 'bg-white animate-pulse' : 'bg-white/30'}`} />
-              {gmailConnected ? 'Live guard active' : 'Awaiting connection'}
+              <span className="truncate">{gmailConnected ? 'Live guard active' : 'Awaiting connection'}</span>
             </p>
           </div>
-          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/[0.06] border border-white/12 flex items-center justify-center text-white/70 shrink-0">
-            <Lock className="w-5 h-5 sm:w-6 sm:h-6" />
+          <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl bg-white/[0.06] border border-white/12 flex items-center justify-center text-white/70 shrink-0">
+            <Lock className="w-4 h-4 sm:w-6 sm:h-6" />
           </div>
         </div>
       </div>
