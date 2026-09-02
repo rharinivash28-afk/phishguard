@@ -180,10 +180,32 @@ Total Indicators Fired: **{len(indicators)}**
         return {
             'incident_id': incident_id,
             'timestamp': timestamp_str,
+            'classification': 'RESTRICTED / LAW ENFORCEMENT & SOC DOSSIER',
             'threat_level': threat_level,
             'risk_score': risk_score,
             'verdict_label': verdict_label,
+            'attack_vector': 'Social Engineering & Brand Impersonation Phishing',
             'detected_brand': detected_brand,
+            # header / attribution forensics
+            'sender_display_name': analysis_result.get('display_name', 'N/A'),
+            'sender_address': sender,
+            'sender_domain': domain,
+            'subject': subject,
+            'victim_mailbox': email_raw_data.get('recipient') or 'victim_inbox@domain.com',
+            'spf_status': email_raw_data.get('spf_status', 'UNKNOWN'),
+            'dkim_status': email_raw_data.get('dkim_status', 'UNKNOWN'),
+            'dmarc_status': email_raw_data.get('dmarc_status', 'UNKNOWN'),
+            'automated_action': 'QUARANTINE_ISOLATED & BLOCKED',
+            # full fired-indicator evidence table
+            'indicators': [
+                {
+                    'type': ind.get('type'),
+                    'severity': ind.get('severity'),
+                    'weight': ind.get('weight'),
+                    'detail': ind.get('detail'),
+                }
+                for ind in indicators
+            ],
             'iocs': iocs,
             'mitre_tactics': mitre_tactics,
             'recommended_actions': recommended_actions,

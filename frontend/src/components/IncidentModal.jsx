@@ -1,6 +1,7 @@
 import React from 'react';
-import { X, ShieldAlert, Download, Copy, Printer, Check, Terminal, Lock, FileJson } from 'lucide-react';
+import { X, ShieldAlert, Download, Copy, Check, Terminal, Lock, FileJson, FileText } from 'lucide-react';
 import Modal from './Modal';
+import { downloadReportPdf } from '../lib/reportPdf';
 
 export default function IncidentModal({ report, onClose }) {
   const [copied, setCopied] = React.useState(false);
@@ -13,7 +14,7 @@ export default function IncidentModal({ report, onClose }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handlePrint = () => window.print();
+  const handleDownloadPdf = () => downloadReportPdf(report);
 
   const handleDownload = () => {
     const blob = new Blob([report.markdown_dossier || JSON.stringify(report, null, 2)], { type: 'text/markdown' });
@@ -60,21 +61,21 @@ export default function IncidentModal({ report, onClose }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={handleDownloadPdf} className="btn-primary" title="Download the full forensic report as a PDF">
+              <FileText className="w-4 h-4" /><span className="hidden sm:inline">Download PDF</span>
+            </button>
             <button onClick={handleCopyMarkdown} className="btn-ghost" title="Copy markdown">
               {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
               <span className="hidden sm:inline">{copied ? 'Copied' : 'Copy'}</span>
             </button>
             <button onClick={handleDownload} className="btn-ghost" title="Download the dossier as Markdown">
-              <Download className="w-4 h-4" /><span className="hidden sm:inline">Dossier</span>
+              <Download className="w-4 h-4" /><span className="hidden sm:inline">Markdown</span>
             </button>
             {report.stix_bundle && (
               <button onClick={handleDownloadStix} className="btn-ghost" title="Download the STIX 2.1 threat-intel bundle">
                 <FileJson className="w-4 h-4" /><span className="hidden sm:inline">STIX 2.1</span>
               </button>
             )}
-            <button onClick={handlePrint} className="btn-ghost" title="Print">
-              <Printer className="w-4 h-4" /><span className="hidden sm:inline">Print</span>
-            </button>
             <button onClick={onClose} className="p-2 rounded-xl bg-white/[0.06] border border-white/12 text-white/50 hover:text-white transition">
               <X className="w-5 h-5" />
             </button>
@@ -103,7 +104,45 @@ export default function IncidentModal({ report, onClose }) {
             </div>
           </Section>
 
-          <Section title="Section 2: Indicators of Compromise (IoCs)" Icon={Terminal}>
+          <Section title="Section 2: Attack Attribution & Header Forensics" Icon={Terminal}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
+              {[
+                ['Sender Display Name', report.sender_display_name],
+                ['Originating Sender Address', report.sender_address],
+                ['Sender Base Domain', report.sender_domain],
+                ['Subject Line', report.subject],
+                ['SPF Authentication', report.spf_status],
+                ['DKIM Cryptographic Status', report.dkim_status],
+                ['DMARC Enforcement', report.dmarc_status],
+              ].map(([k, v]) => (
+                <div key={k}>
+                  <p className="text-white/35 uppercase text-[10px]">{k}</p>
+                  <p className="text-white/85 break-all">{v || '—'}</p>
+                </div>
+              ))}
+            </div>
+          </Section>
+
+          <Section title={`Section 3: Fired Threat Indicators (${(report.indicators || []).length})`} Icon={ShieldAlert}>
+            {(report.indicators || []).length === 0 ? (
+              <p className="text-white/40">No discrete threat indicators fired.</p>
+            ) : (
+              <div className="space-y-2">
+                {report.indicators.map((ind, i) => (
+                  <div key={i} className="bg-white/[0.04] p-2.5 rounded-lg border border-white/10">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-white text-black">{ind.severity}</span>
+                      <span className="text-white/80 font-bold text-[11px]">{ind.type}</span>
+                      <span className="text-white/40 text-[10px]">weight +{ind.weight}</span>
+                    </div>
+                    <p className="text-white/55 text-[11px] mt-1 leading-relaxed font-sans">{ind.detail}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          <Section title="Section 4: Indicators of Compromise (IoCs)" Icon={Terminal}>
             <div className="space-y-2">
               <div>
                 <span className="text-white/35 uppercase text-[10px] block">Originating Malicious Domains:</span>
@@ -135,7 +174,7 @@ export default function IncidentModal({ report, onClose }) {
             </div>
           </Section>
 
-          <Section title="Section 3: MITRE ATT&CK Tactical Mapping" Icon={Lock}>
+          <Section title="Section 5: MITRE ATT&CK Tactical Mapping" Icon={Lock}>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {(report.mitre_tactics || []).map((m, i) => (
                 <div key={i} className="bg-white/[0.04] p-2.5 rounded-lg border border-white/10">
@@ -147,7 +186,7 @@ export default function IncidentModal({ report, onClose }) {
             </div>
           </Section>
 
-          <Section title="Section 4: Mandatory Containment & Remediation Playbook" Icon={ShieldAlert}>
+          <Section title="Section 6: Mandatory Containment & Remediation Playbook" Icon={ShieldAlert}>
             <div className="space-y-2">
               {(report.recommended_actions || []).map((act, i) => (
                 <div key={i} className="p-3 bg-white/[0.04] rounded-lg border border-white/10 flex items-start gap-3">
