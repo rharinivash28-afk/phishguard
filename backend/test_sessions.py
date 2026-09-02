@@ -81,9 +81,9 @@ def test_incident_report_reachable_after_simulate():
     to a dossier in the SAME session, even when another session already
     quarantined the identical sample."""
     a, b = _client(), _client()
-    # both quarantine the same PayPal sample
-    ia = a.post("/api/sentinel/simulate-incoming").json()["item"]
-    ib = b.post("/api/sentinel/simulate-incoming").json()["item"]
+    # both quarantine the SAME sample explicitly
+    ia = a.post("/api/sentinel/simulate-incoming?sample_id=sample_ps02_paypal").json()["item"]
+    ib = b.post("/api/sentinel/simulate-incoming?sample_id=sample_ps02_paypal").json()["item"]
     assert ia["incident_id"] and ib["incident_id"]
     assert ia["incident_id"] != ib["incident_id"], "incident ids collide across sessions"
     # each session can fetch its own dossier

@@ -360,13 +360,13 @@ export default function App() {
       />
 
       <div className="bg-white/[0.04] border-b border-white/10 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex items-center gap-3 text-[11px]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex items-center gap-2 sm:gap-3 text-[11px]">
           <span className="pill-muted shrink-0">Private workspace</span>
-          <p className="text-white/50 flex-1 leading-relaxed">
-            Zero-PII offline forensics. This browser has its own isolated inbox — nobody else can see it. Your Gmail
-            app password is stored encrypted and only used to read your mail.
+          <p className="text-white/50 flex-1 leading-relaxed truncate sm:whitespace-normal sm:overflow-visible">
+            <span className="hidden sm:inline">Zero-PII offline forensics. This browser has its own isolated inbox — nobody else can see it. Your Gmail app password is stored encrypted and only used to read your mail.</span>
+            <span className="sm:hidden">Isolated to this browser · app password encrypted · zero-PII.</span>
           </p>
-          <button onClick={handleWipeWorkspace} className="text-white/40 hover:text-white/80 transition shrink-0 font-mono" title="Delete everything in this workspace">
+          <button onClick={handleWipeWorkspace} className="text-white/40 hover:text-white/80 transition shrink-0 font-mono whitespace-nowrap" title="Delete everything in this workspace">
             Wipe my data
           </button>
         </div>

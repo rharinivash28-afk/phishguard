@@ -298,10 +298,27 @@ class UserWorkspace:
         self.db.commit()
         return {"active": sess.monitoring_active}
 
-    def simulate_incoming(self, sample_id: str = "sample_ps02_paypal") -> Dict[str, Any]:
-        target = next((dict(s) for s in SAMPLE_EMAILS if s["id"] == sample_id), None)
+    def simulate_incoming(self, sample_id: Optional[str] = None) -> Dict[str, Any]:
+        """Inject a demo email. With no sample_id, rotate through the bundled
+        samples so repeated clicks don't produce identical rows."""
+        if sample_id:
+            target = next((dict(s) for s in SAMPLE_EMAILS if s["id"] == sample_id), None)
+        else:
+            # pick a sample this workspace hasn't simulated yet (by title), else random
+            seen_titles = {
+                r.subject for r in self.db.execute(
+                    select(InboxItem).where(
+                        InboxItem.session_id == self.session_id,
+                        InboxItem.id.like("live_sim_%"),
+                    )
+                ).scalars().all()
+            }
+            fresh = [s for s in SAMPLE_EMAILS if s["subject"] not in seen_titles]
+            pool = fresh or SAMPLE_EMAILS
+            target = dict(pool[int(time.time()) % len(pool)])
         if target is None:
             target = dict(SAMPLE_EMAILS[0])
+        target = dict(target)
         target["id"] = f"live_sim_{int(time.time())}_{uuid.uuid4().hex[:4]}"
         target["date"] = "Just now (Live Threat)"
         return self.process_new_email(target)

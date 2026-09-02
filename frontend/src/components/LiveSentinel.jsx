@@ -70,101 +70,82 @@ export default function LiveSentinel({
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const totalScanned = stats?.total_emails_scanned ?? 0;
   const metrics = [
-    { label: 'Total Scanned', value: stats?.total_emails_scanned ?? 0, sub: gmailConnected ? 'Real-time inbox sentinel' : 'Connect Gmail to begin', Icon: RefreshCw, tone: 'neutral' },
-    { label: 'Threats Blocked', value: stats?.threats_blocked ?? 0, sub: 'Quarantined from inbox', Icon: ShieldAlert, tone: 'danger' },
-    { label: 'Safe Deliveries', value: stats?.safe_delivered ?? 0, sub: 'SPF / DKIM / DMARC verified', Icon: ShieldCheck, tone: 'safe' },
+    { label: 'Total Scanned', value: totalScanned, sub: totalScanned > 0 ? 'Analyzed' : (gmailConnected ? 'Waiting for mail' : 'Connect to begin'), Icon: RefreshCw, tone: 'neutral' },
+    { label: 'Threats Blocked', value: stats?.threats_blocked ?? 0, sub: 'Quarantined', Icon: ShieldAlert, tone: 'danger' },
+    { label: 'Safe Deliveries', value: stats?.safe_delivered ?? 0, sub: 'Auth verified', Icon: ShieldCheck, tone: 'safe' },
   ];
 
   return (
-    <div className="space-y-6">
-      {/* Connect Gmail banner */}
-      {!gmailConnected && (
-        <div className="glass p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-white text-black"><Mail className="w-5 h-5" /></div>
-            <div>
-              <h3 className="text-sm font-bold text-white">Connect your Gmail for live monitoring</h3>
-              <p className="text-xs text-white/45 mt-0.5">
-                Read-only IMAP with a 16-character app password and a session duration you choose. You can also
-                paste, upload, or simulate emails below to test the engine.
-              </p>
-            </div>
-          </div>
-          <button onClick={onConnectGmail} className="btn-primary shrink-0">
-            <Mail className="w-4 h-4" />
-            <span>Connect Gmail</span>
-          </button>
-        </div>
-      )}
-
+    <div className="space-y-5">
       {/* Metrics */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {metrics.map(({ label, value, sub, Icon, tone }) => {
           const active = value > 0 && tone !== 'neutral';
           return (
             <div key={label}
-              className={`glass p-4 flex items-center justify-between ${active && tone === 'danger' ? 'frame-danger' : ''} ${active && tone === 'safe' ? 'frame-safe' : ''}`}>
-              <div>
-                <p className="text-[11px] font-semibold text-white/45 uppercase tracking-wider">{label}</p>
-                <p className={`text-2xl font-extrabold font-mono mt-1 ${
+              className={`glass p-3.5 sm:p-4 flex items-center justify-between gap-2 ${active && tone === 'danger' ? 'frame-danger' : ''} ${active && tone === 'safe' ? 'frame-safe' : ''}`}>
+              <div className="min-w-0">
+                <p className="text-[10px] sm:text-[11px] font-semibold text-white/45 uppercase tracking-wide leading-tight">{label}</p>
+                <p className={`text-xl sm:text-2xl font-extrabold font-mono mt-1 ${
                   active && tone === 'danger' ? 'risk-high' : active && tone === 'safe' ? 'risk-low' : 'text-white'
                 }`}>{value}</p>
-                <p className="text-[11px] text-white/40 mt-1">{sub}</p>
+                <p className="text-[10px] sm:text-[11px] text-white/40 mt-0.5 truncate">{sub}</p>
               </div>
-              <div className={`w-12 h-12 rounded-xl border flex items-center justify-center ${
+              <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl border flex items-center justify-center shrink-0 ${
                 active && tone === 'danger' ? 'tint-danger text-[#ff8585]'
                   : active && tone === 'safe' ? 'tint-safe text-[#6ee7a0]'
                   : 'bg-white/[0.06] border-white/12 text-white/70'
               }`}>
-                <Icon className="w-6 h-6" />
+                <Icon className="w-5 h-5 sm:w-6 sm:h-6" />
               </div>
             </div>
           );
         })}
 
-        <div className="glass p-4 flex items-center justify-between">
+        <div className="glass p-3.5 sm:p-4 flex items-center justify-between gap-2">
           <div className="min-w-0">
-            <p className="text-[11px] font-semibold text-white/45 uppercase tracking-wider">Monitored Mailbox</p>
-            <p className="text-sm font-bold text-white/90 mt-1 font-mono truncate" title={stats?.connected_email || 'Not connected'}>
+            <p className="text-[10px] sm:text-[11px] font-semibold text-white/45 uppercase tracking-wide leading-tight">Monitored Mailbox</p>
+            <p className={`text-sm font-bold mt-1 font-mono truncate ${gmailConnected ? 'text-white/90' : 'text-white/55'}`} title={stats?.connected_email || 'Not connected'}>
               {stats?.connected_email || 'Not connected'}
             </p>
-            <p className="text-[11px] text-white/40 mt-1 flex items-center gap-1">
-              <span className={`w-1.5 h-1.5 rounded-full ${gmailConnected ? 'bg-white animate-pulse' : 'bg-white/30'}`} />
-              {gmailConnected ? 'Live Gmail guard active' : 'Awaiting connection'}
+            <p className="text-[10px] sm:text-[11px] text-white/40 mt-0.5 flex items-center gap-1">
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${gmailConnected ? 'bg-white animate-pulse' : 'bg-white/30'}`} />
+              {gmailConnected ? 'Live guard active' : 'Awaiting connection'}
             </p>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-white/[0.06] border border-white/12 flex items-center justify-center text-white/70">
-            <Lock className="w-6 h-6" />
+          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/[0.06] border border-white/12 flex items-center justify-center text-white/70 shrink-0">
+            <Lock className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
         </div>
       </div>
 
       {/* Importer */}
       <div className="glass p-4">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 md:gap-4">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-white/[0.06] text-white/80 border border-white/12">
-              <Mail className="w-6 h-6" />
+            <div className="p-2.5 rounded-xl bg-white/[0.06] text-white/80 border border-white/12 shrink-0">
+              <Mail className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                <span>Load any email from your Gmail inbox</span>
-                <span className="pill-muted">Real-time inspector</span>
+              <h3 className="text-sm font-bold text-white uppercase tracking-wide flex flex-wrap items-center gap-2">
+                <span>Test the engine on any email</span>
+                <span className="pill-muted">no Gmail needed</span>
               </h3>
               <p className="text-xs text-white/45 mt-0.5">
-                Paste email details, or upload a downloaded Gmail <code className="text-white/70 font-mono">.eml</code> message.
+                Paste the sender, subject and body — or upload a saved <span className="font-mono text-white/70">.eml</span> file from Gmail.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 w-full md:w-auto">
+          <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
             <input type="file" ref={fileInputRef} accept=".eml,.msg,.txt" onChange={handleFileChange} className="hidden" />
-            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="btn-ghost">
+            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="btn-ghost flex-1 md:flex-none justify-center">
               <Upload className="w-3.5 h-3.5" />
               <span>{uploading ? 'Processing…' : 'Upload .eml'}</span>
             </button>
-            <button type="button" onClick={() => setShowQuickIngest(!showQuickIngest)} className="btn-primary">
+            <button type="button" onClick={() => setShowQuickIngest(!showQuickIngest)} className="btn-primary flex-1 md:flex-none justify-center">
               <PlusCircle className="w-3.5 h-3.5" />
               <span>{showQuickIngest ? 'Close' : 'Paste email'}</span>
             </button>
@@ -238,19 +219,20 @@ export default function LiveSentinel({
 
         <div className="divide-y divide-white/[0.06] max-h-[600px] overflow-y-auto">
           {!gmailConnected && (inbox || []).length === 0 ? (
-            <div className="p-14 text-center">
-              <div className="w-16 h-16 mx-auto rounded-2xl bg-white/[0.06] border border-white/12 flex items-center justify-center mb-4">
-                <MailX className="w-8 h-8 text-white/40" />
+            <div className="p-10 sm:p-14 text-center">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 mx-auto rounded-2xl bg-white/[0.06] border border-white/12 flex items-center justify-center mb-4">
+                <MailX className="w-7 h-7 sm:w-8 sm:h-8 text-white/40" />
               </div>
-              <p className="text-base font-bold text-white">To see your mail, connect your Gmail to this website</p>
-              <p className="text-xs text-white/45 mt-1.5 max-w-md mx-auto leading-relaxed">
-                Read-only IMAP · your inbox stays private to this browser · nothing is stored except an encrypted
-                app password. Or test the engine directly with paste / upload / simulate above.
+              <p className="text-base font-bold text-white">Connect your Gmail to see your live inbox</p>
+              <p className="text-xs text-white/45 mt-2 max-w-sm mx-auto leading-relaxed">
+                Read-only IMAP with a 16-character app password and a session length you choose. Your inbox stays
+                private to this browser — only an encrypted password is stored.
               </p>
               <button onClick={onConnectGmail} className="btn-primary mt-5">
                 <Mail className="w-4 h-4" />
                 <span>Connect Gmail</span>
               </button>
+              <p className="text-[11px] text-white/30 mt-4">or use <span className="text-white/50">Paste email</span> / <span className="text-white/50">Upload .eml</span> / <span className="text-white/50">Simulate</span> above to try the engine now</p>
             </div>
           ) : filteredItems.length === 0 ? (
             <div className="p-12 text-center text-white/40">

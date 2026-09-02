@@ -96,12 +96,12 @@ export default function DeepInvestigator({ initialEmail, presets = [], onGenerat
     <div className="space-y-6">
       {/* Presets */}
       <div className="glass p-4">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-3">
           <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-white/60" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-white/70">Quick-fill test presets</h3>
+            <Sparkles className="w-4 h-4 text-white/60 shrink-0" />
+            <h3 className="text-xs font-bold uppercase tracking-wide text-white/70">Quick-fill test presets</h3>
           </div>
-          <span className="text-[11px] text-white/35">Click one to populate the form</span>
+          <span className="text-[11px] text-white/35">— click one to fill the form</span>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {(presets || []).map((sample) => (
@@ -141,22 +141,22 @@ export default function DeepInvestigator({ initialEmail, presets = [], onGenerat
 
             <div>
               <label className="block text-[10px] font-semibold uppercase text-white/45 mb-1">Email authentication results</label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
                 {['spf_status', 'dkim_status', 'dmarc_status'].map((k) => (
-                  <div key={k}>
+                  <div key={k} className="min-w-0">
                     <span className="block text-[9px] font-mono text-white/35 mb-0.5">{k.split('_')[0].toUpperCase()}</span>
                     <select value={formData[k]} onChange={(e) => setFormData({ ...formData, [k]: e.target.value })}
-                      className="glass-input font-mono p-1.5">
+                      className="glass-input font-mono px-1.5 py-1.5 text-[11px] w-full">
                       <option value="UNKNOWN">UNKNOWN</option>
                       <option value="PASS">PASS</option>
-                      <option value="SOFTFAIL">SOFTFAIL</option>
+                      <option value="SOFTFAIL">SOFT-FAIL</option>
                       <option value="FAIL">FAIL</option>
                       <option value="NONE">NONE</option>
                     </select>
                   </div>
                 ))}
               </div>
-              <p className="text-[10px] text-white/35 mt-1">Find these in Gmail → "Show original". Leave UNKNOWN if unsure.</p>
+              <p className="text-[10px] text-white/35 mt-1">Find these in Gmail &rarr; &ldquo;Show original&rdquo;. Leave UNKNOWN if unsure.</p>
             </div>
 
             {field('Full message body', 'body', { textarea: true, rows: 5, mono: true, placeholder: 'Paste the email text here…' })}
@@ -222,17 +222,28 @@ export default function DeepInvestigator({ initialEmail, presets = [], onGenerat
 
               <div className="glass-soft p-4 space-y-2.5">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-white/70 mb-2">Multi-factor forensic vector breakdown</h4>
-                {Object.entries(analysis.score_breakdown || {}).map(([key, val]) => (
-                  <div key={key} className="space-y-1">
-                    <div className="flex justify-between text-[11px] font-mono text-white/45">
-                      <span className="capitalize">{key.replace('_', ' ')}</span>
-                      <span className="text-white/75">{val} / 50</span>
+                {Object.entries(analysis.score_breakdown || {}).map(([key, val]) => {
+                  const LABELS = {
+                    domain_reputation: 'Domain reputation',
+                    url_inspection: 'URL inspection',
+                    urgency_nlp: 'Urgency & NLP',
+                    attachments: 'Attachments',
+                    header_auth: 'Header auth (SPF/DKIM/DMARC)',
+                  };
+                  const MAX = { url_inspection: 55 };
+                  const max = MAX[key] || 50;
+                  return (
+                    <div key={key} className="space-y-1">
+                      <div className="flex justify-between text-[11px] font-mono text-white/45">
+                        <span>{LABELS[key] || key.replace(/_/g, ' ')}</span>
+                        <span className="text-white/75">{val} / {max}</span>
+                      </div>
+                      <div className="w-full bg-white/[0.06] rounded-full h-1.5 overflow-hidden">
+                        <div className="h-full rounded-full bg-white" style={{ width: `${Math.min((val / max) * 100, 100)}%`, opacity: val >= 30 ? 1 : val >= 15 ? 0.7 : 0.4 }} />
+                      </div>
                     </div>
-                    <div className="w-full bg-white/[0.06] rounded-full h-1.5 overflow-hidden">
-                      <div className="h-full rounded-full bg-white" style={{ width: `${Math.min((val / 50) * 100, 100)}%`, opacity: val >= 30 ? 1 : val >= 15 ? 0.7 : 0.4 }} />
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <div className="space-y-2">

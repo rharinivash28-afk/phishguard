@@ -45,7 +45,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     title="PhishGuard AI — Enterprise Inbox Sentinel",
-    version="5.0.0",
+    version="5.1.0",
     description="Zero-PII phishing forensics: private per-session workspace, app-password Gmail monitoring with configurable duration, STIX 2.1 export.",
     lifespan=lifespan,
 )
@@ -292,8 +292,8 @@ def perform_quarantine_action(payload: QuarantineActionRequest, ws: UserWorkspac
 
 
 @app.post("/api/sentinel/simulate-incoming")
-def simulate_incoming_attack(sample_id: Optional[str] = "sample_ps02_paypal", ws: UserWorkspace = Depends(workspace)):
-    item = ws.simulate_incoming(sample_id or "sample_ps02_paypal")
+def simulate_incoming_attack(sample_id: Optional[str] = None, ws: UserWorkspace = Depends(workspace)):
+    item = ws.simulate_incoming(sample_id)
     return {"status": "INJECTED_AND_ANALYZED", "item": item, "stats": ws.get_stats()}
 
 

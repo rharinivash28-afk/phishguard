@@ -24,10 +24,10 @@ export default function Header({
   return (
     <header className="sticky top-0 z-40 border-b border-white/10 bg-black/40 backdrop-blur-2xl">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 gap-3">
+        <div className="flex items-center justify-between h-16 gap-2 sm:gap-3">
           {/* Brand */}
-          <div className="flex items-center gap-3">
-            <div className="relative flex items-center justify-center w-10 h-10 rounded-xl bg-white text-black">
+          <div className="flex items-center gap-2.5 min-w-0 shrink">
+            <div className="relative flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white text-black shrink-0">
               <Shield className="w-5 h-5" />
               {stats?.threats_blocked > 0 && (
                 <span className="absolute -top-1 -right-1 flex h-3 w-3">
@@ -36,12 +36,12 @@ export default function Header({
                 </span>
               )}
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <span className="font-extrabold text-lg tracking-tight text-white">PhishGuard AI</span>
-                <span className="hidden sm:inline pill-muted">Enterprise Inbox Sentinel</span>
+                <span className="font-extrabold text-base sm:text-lg tracking-tight text-white whitespace-nowrap">PhishGuard AI</span>
+                <span className="hidden md:inline pill-muted">Enterprise Inbox Sentinel</span>
               </div>
-              <p className="text-xs text-white/40 hidden sm:block">Zero-PII phishing forensics &amp; cybercrime reporting</p>
+              <p className="text-[11px] text-white/40 hidden md:block">Zero-PII phishing forensics &amp; cybercrime reporting</p>
             </div>
           </div>
 
@@ -64,11 +64,11 @@ export default function Header({
           </nav>
 
           {/* Controls */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               onClick={onSimulateAttack}
               title="Simulate an incoming phishing attack"
-              className="hidden md:inline-flex btn-ghost"
+              className="hidden lg:inline-flex btn-ghost"
             >
               <Zap className="w-3.5 h-3.5" />
               <span>Inject Phish</span>
@@ -84,7 +84,7 @@ export default function Header({
                 <button
                   onClick={onOpenSettings}
                   title="Gmail connected — click to manage or disconnect"
-                  className="hidden sm:flex items-center gap-2 glass-soft px-3 py-1.5 cursor-pointer hover:bg-white/[0.09] transition"
+                  className="hidden md:flex items-center gap-2 glass-soft px-3 py-1.5 cursor-pointer hover:bg-white/[0.09] transition"
                 >
                   <span className="w-2 h-2 rounded-full shrink-0 dot-safe animate-pulse" />
                   <Mail className="w-3.5 h-3.5 text-white/70 shrink-0" />
@@ -95,14 +95,14 @@ export default function Header({
               <button
                 onClick={onConnectGmail}
                 title="Connect your Gmail with an app password"
-                className="flex items-center gap-2 rounded-lg bg-white text-black px-3 py-1.5 text-xs font-bold hover:bg-white/85 transition"
+                className="flex items-center gap-2 rounded-lg bg-white text-black px-2.5 sm:px-3 py-1.5 text-xs font-bold hover:bg-white/85 transition shrink-0"
               >
-                <Mail className="w-4 h-4" />
-                <span>Connect Gmail</span>
+                <Mail className="w-4 h-4 shrink-0" />
+                <span>Connect<span className="hidden sm:inline">&nbsp;Gmail</span></span>
               </button>
             )}
 
-            <button onClick={onOpenSettings} title="Settings" className="p-2 rounded-lg glass-soft text-white/70 hover:text-white hover:bg-white/[0.09] transition">
+            <button onClick={onOpenSettings} title="Settings" className="p-2 rounded-lg glass-soft text-white/70 hover:text-white hover:bg-white/[0.09] transition shrink-0">
               <Settings className="w-4 h-4" />
             </button>
           </div>
