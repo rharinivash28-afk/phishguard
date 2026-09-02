@@ -30,26 +30,40 @@ class CybercrimeIncidentReportGenerator:
         verdict_label = analysis_result.get('verdict_label', 'Unknown')
         detected_brand = analysis_result.get('detected_brand', 'None')
         indicators = analysis_result.get('indicators', [])
-        extracted_urls = analysis_result.get('extracted_urls', [])
-        
+        suspicious = risk_score >= 50
+
+        # A forensic dossier lists the links that matter, not every tracking
+        # pixel — de-dupe, drop obvious unsubscribe/list links, and cap. Only
+        # keep URLs at all when the verdict is suspicious.
+        _seen = set()
+        deduped = []
+        for u in analysis_result.get('extracted_urls', []):
+            base = u.split('?')[0]
+            if base in _seen:
+                continue
+            if any(s in u.lower() for s in ('unsubscribe', '/asm/', 'list-unsubscribe')):
+                continue
+            _seen.add(base)
+            deduped.append(u)
+        extracted_urls = deduped[:8] if suspicious else []
+
         # Compile Indicators of Compromise (IoCs)
         iocs = {
-            'malicious_domains': [domain] if risk_score >= 50 else [],
+            'malicious_domains': [domain] if suspicious else [],
             'impersonated_brands': [detected_brand] if detected_brand else [],
             'phishing_urls': extracted_urls,
             'sender_addresses': [sender],
             'attachment_hashes': []
         }
-        
-        # Generate simulated SHA-256 for extracted URLs/payloads
+
+        # SHA-256 evidence integrity hash — only for the kept phishing links.
         for url in extracted_urls:
-            url_hash = hashlib.sha256(url.encode()).hexdigest()
             iocs['attachment_hashes'].append({
-                'artifact_type': 'TARGET_URL_HASH',
+                'artifact_type': 'PHISHING_URL_SHA256',
                 'raw_value': url,
-                'sha256': url_hash
+                'sha256': hashlib.sha256(url.encode()).hexdigest(),
             })
-            
+
         for att in email_raw_data.get('attachments', []):
             att_name = att.get('filename', 'payload.bin')
             # real payload hash when we have it (IMAP / .eml parse); else fall back

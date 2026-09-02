@@ -143,18 +143,21 @@ export function downloadReportPdf(report) {
   y += 2;
   text('Extracted Phishing Link(s):', { style: 'bold', size: 9, gap: LINE - 2 });
   const urls = iocs.phishing_urls || [];
-  if (urls.length === 0) text('None', { indent: 14, size: 8.5 });
-  urls.forEach((u) => text(`• ${u}`, { indent: 14, size: 7.5, color: [50, 50, 50], gap: LINE - 3 }));
-  y += 2;
-  text('Cryptographic Hashes (SHA-256):', { style: 'bold', size: 9, gap: LINE - 2 });
-  const hashes = iocs.attachment_hashes || [];
-  if (hashes.length === 0) text('None', { indent: 14, size: 8.5 });
-  hashes.forEach((h) => {
-    text(`• ${h.sha256}`, { indent: 14, size: 7.5, color: [50, 50, 50], gap: LINE - 4 });
-    text(`  ${h.artifact_type}: ${h.raw_value || h.filename || ''}`, {
-      indent: 20, size: 6.8, color: [120, 120, 120], gap: LINE - 4,
-    });
+  if (urls.length === 0) text('None flagged', { indent: 14, size: 8.5, color: [110, 110, 110] });
+  urls.forEach((u) => {
+    const shown = u.length > 160 ? `${u.slice(0, 160)}…` : u;
+    text(`• ${shown}`, { indent: 14, size: 7.5, color: [50, 50, 50], gap: LINE - 3 });
   });
+  y += 2;
+  const hashes = iocs.attachment_hashes || [];
+  if (hashes.length) {
+    text('Evidence Integrity Hashes (SHA-256):', { style: 'bold', size: 9, gap: LINE - 2 });
+    hashes.forEach((h) => {
+      text(`• ${h.sha256}`, { indent: 14, size: 7.5, color: [50, 50, 50], gap: LINE - 4 });
+      const src = h.filename || (h.raw_value ? `${h.raw_value.slice(0, 90)}${h.raw_value.length > 90 ? '…' : ''}` : '');
+      if (src) text(`  ${h.artifact_type}: ${src}`, { indent: 20, size: 6.8, color: [120, 120, 120], gap: LINE - 4 });
+    });
+  }
   rule();
 
   // ---- 5. MITRE ATT&CK ----------------------------------------------
