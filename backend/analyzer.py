@@ -53,7 +53,22 @@ HOMOGLYPH_FOLD = {
 
 SUSPICIOUS_TLDS = {
     '.xyz', '.top', '.tk', '.ml', '.ga', '.cf', '.gq', '.buzz', '.cam',
-    '.work', '.click', '.live', '.monster', '.rest', '.quest', '.bid', '.racing'
+    '.work', '.click', '.live', '.monster', '.rest', '.quest', '.bid', '.racing',
+    '.info', '.online', '.site', '.link', '.support', '.zip', '.mov', '.lol',
+    '.icu', '.cyou', '.sbs', '.autos', '.fit', '.wtf', '.gdn', '.download',
+}
+
+# Brand names that legitimately appear as substrings of many benign domains
+# (e.g. "ups" in "startups.io") — excluded from the substring-containment check.
+_SUBSTRING_SAFE_BRANDS = {'ups', 'irs', 'hmrc', 'wise', 'steam', 'target', 'uber'}
+
+# Consumer mailbox providers — a role/authority display name from one of these is
+# a strong CEO-fraud signal.
+_FREE_MAIL_DOMAINS = {
+    'gmail.com', 'googlemail.com', 'yahoo.com', 'yahoo.co.uk', 'ymail.com',
+    'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'aol.com', 'icloud.com',
+    'me.com', 'mail.com', 'gmx.com', 'gmx.net', 'proton.me', 'protonmail.com',
+    'zoho.com', 'yandex.com', 'tutanota.com', 'hey.com',
 }
 
 SUSPICIOUS_SUBDOMAINS_KEYWORDS = [
@@ -173,13 +188,18 @@ class PhishingInvestigationEngine:
                     score += 40
                     detected_brand = brand
                     break
-                elif len(brand_clean) >= 5 and brand_clean in token:
+                elif (
+                    len(brand_clean) >= 4
+                    and brand_clean not in _SUBSTRING_SAFE_BRANDS
+                    and brand_clean in token
+                    and token != brand_clean
+                ):
                     indicators.append({
                         'type': 'TYPOSQUATTING_KEYWORD',
                         'severity': 'HIGH',
                         'weight': 25,
                         'name': f'Targeted Brand Lookalike ({brand.upper()})',
-                        'detail': f"Domain '{domain}' chains official brand '{brand}' with suspicious sub-strings."
+                        'detail': f"Domain '{domain}' chains official brand '{brand}' with extra sub-strings — a common lookalike pattern."
                     })
                     score += 25
                     detected_brand = brand
@@ -214,10 +234,17 @@ class PhishingInvestigationEngine:
 
         if display_name:
             display_lower = display_name.lower()
+            # collapse the sender domain to its bare alphanumerics so a multi-word
+            # brand ("bank of america") can be matched against "bankofamerica.com"
+            domain_squashed = re.sub(r'[^a-z0-9]', '', domain_lower)
             for brand in POPULAR_BRANDS:
+                brand_squashed = re.sub(r'[^a-z0-9]', '', brand)
                 # whole-word match only: "UPS" must not fire on "groups"/"startups"
                 claims_brand = re.search(rf'\b{re.escape(brand)}\b', display_lower) is not None
-                if claims_brand and brand not in domain_lower:
+                domain_backs_claim = (
+                    brand in domain_lower or brand_squashed in domain_squashed
+                )
+                if claims_brand and not domain_backs_claim:
                     indicators.append({
                         'type': 'DISPLAY_NAME_SPOOFING',
                         'severity': 'CRITICAL',
@@ -230,10 +257,31 @@ class PhishingInvestigationEngine:
                         detected_brand = brand
                     break
 
+            # Free-mail address with an authority/role display name — the classic
+            # CEO-fraud envelope ("John Smith (CEO)" <random@gmail.com>).
+            free_mail = domain_lower in _FREE_MAIL_DOMAINS
+            authority_name = re.search(
+                r'\b(ceo|cfo|coo|cto|president|director|manager|chairman|founder|'
+                r'head\s+of|vp|vice\s+president|executive|hr|human\s+resources|'
+                r'payroll|finance|accounts?\s+payable|it\s+support|help\s*desk|admin)\b',
+                display_lower)
+            if free_mail and authority_name:
+                indicators.append({
+                    'type': 'DISPLAY_NAME_SPOOFING',
+                    'severity': 'HIGH',
+                    'weight': 25,
+                    'name': 'Authority Impersonation from a Free-Mail Account',
+                    'detail': (
+                        f"Display name '{display_name}' claims an executive / internal role "
+                        f"but the message is sent from a free consumer mailbox ('{domain}')."
+                    ),
+                })
+                score += 25
+
         return {
             'domain': domain,
             'detected_brand': detected_brand,
-            'domain_score': min(score, 50),
+            'domain_score': min(score, 55),
             'indicators': indicators
         }
 
@@ -288,16 +336,19 @@ class PhishingInvestigationEngine:
                 })
                 score += 30
 
-            for kw in ['verify', 'login', 'signin', 'auth', 'update', 'account', 'suspended', 'session', 'confirm']:
+            # A credential-y path keyword is only weakly suspicious on its own —
+            # legitimate sign-in and verification pages use exactly these words.
+            # It compounds the score but is not treated as hard evidence.
+            for kw in ['verify', 'login', 'signin', 'auth', 'suspended', 'unlock', 'session']:
                 if kw in path or kw in netloc:
                     indicators.append({
                         'type': 'CREDENTIAL_HARVESTING_PATH',
-                        'severity': 'HIGH',
-                        'weight': 15,
-                        'name': f'Credential Harvesting Target Endpoint (/{kw})',
-                        'detail': f"URL path contains suspicious phishing kit keyword '{kw}'."
+                        'severity': 'MEDIUM',
+                        'weight': 12,
+                        'name': f'Credential-Entry Endpoint (/{kw})',
+                        'detail': f"URL points at a credential/verification endpoint ('{kw}') — common to both real logins and phishing kits."
                     })
-                    score += 15
+                    score += 12
                     break
 
             if raw_url in blocklist:
@@ -345,8 +396,32 @@ class PhishingInvestigationEngine:
                 })
                 score += weight
 
+        # Gift-card / wire-transfer request — the signature of Business Email
+        # Compromise. When the message also asks the reader to *act* (buy, send,
+        # purchase, transfer) it is treated as CRITICAL on its own.
+        payment_bait = re.search(
+            r'(gift\s*card|itunes\s*card|google\s*play\s*card|steam\s*card|'
+            r'wire\s*transfer|bank\s*transfer|western\s*union|money\s*gram|'
+            r'bitcoin|btc|crypto|usdt|seed\s*phrase|recovery\s*phrase)',
+            text, re.IGNORECASE)
+        action_verb = re.search(
+            r'\b(buy|purchase|send|transfer|pay|wire|get\s+me|share|provide|scratch|'
+            r'redeem|forward|deposit)\b', text, re.IGNORECASE)
+        if payment_bait and action_verb:
+            indicators.append({
+                'type': 'URGENCY_NLP_TRIGGER',
+                'severity': 'CRITICAL',
+                'weight': 45,
+                'name': 'Business Email Compromise: Payment / Gift-Card Request',
+                'detail': (
+                    f"Message asks the reader to '{action_verb.group(0)}' via "
+                    f"'{payment_bait.group(0)}' — a hallmark of CEO-fraud / BEC scams."
+                ),
+            })
+            score += 45
+
         return {
-            'urgency_score': min(score, 45),
+            'urgency_score': min(score, 55),
             'indicators': indicators,
             'fired_keywords': list(set(fired_keywords))
         }
@@ -466,27 +541,70 @@ class PhishingInvestigationEngine:
                 seen_names.add(ind['name'])
                 unique_indicators.append(ind)
 
+        # Weighted composite of the four analyzer vectors. Weights sum to > 1 so
+        # that two or more strong vectors reliably push a real attack past 70.
         raw_composite = (
-            domain_analysis['domain_score'] * 0.30 +
-            url_analysis['url_score'] * 0.35 +
-            nlp_analysis['urgency_score'] * 0.20 +
-            attachment_analysis['attachment_score'] * 0.25 +
-            min(header_score, 40) * 0.20
+            domain_analysis['domain_score'] * 0.55 +
+            url_analysis['url_score'] * 0.55 +
+            nlp_analysis['urgency_score'] * 0.45 +
+            attachment_analysis['attachment_score'] * 0.55 +
+            min(header_score, 45) * 0.45
         )
 
         critical_count = sum(1 for i in unique_indicators if i['severity'] == 'CRITICAL')
         high_count = sum(1 for i in unique_indicators if i['severity'] == 'HIGH')
+        med_count = sum(1 for i in unique_indicators if i['severity'] == 'MEDIUM')
 
-        if critical_count >= 2:
+        # "Hard" evidence = something is objectively wrong with the sender / links /
+        # attachments / authentication. "Soft" evidence (NLP urgency alone) is
+        # context that real transactional mail uses too — it can raise suspicion but
+        # must not, by itself, produce a phishing verdict on an otherwise-clean,
+        # auth-passing message.
+        _HARD_TYPES = {
+            'BRAND_TYPOSQUATTING_HOMOGLYPH', 'TYPOSQUATTING_KEYWORD', 'DISPLAY_NAME_SPOOFING',
+            'ANCHOR_TEXT_MISMATCH', 'RAW_IP_URL', 'INSECURE_PROTOCOL', 'SUSPICIOUS_TLD',
+            'DECEPTIVE_DOMAIN_STRUCTURE', 'CREDENTIAL_HARVESTING_PATH', 'SAFE_BROWSING_BLOCKLIST',
+            'DOUBLE_EXTENSION_PAYLOAD', 'MALICIOUS_ATTACHMENT_TYPE',
+            'SPF_VALIDATION_FAILED', 'DKIM_VALIDATION_FAILED', 'DMARC_POLICY_REJECT',
+            'AI_MODEL_FLAGGED',
+        }
+        hard_hits = [i for i in unique_indicators
+                     if i['type'] in _HARD_TYPES
+                     or (i['type'] == 'URGENCY_NLP_TRIGGER' and i['severity'] == 'CRITICAL')]
+        hard_crit = sum(1 for i in hard_hits if i['severity'] == 'CRITICAL')
+        hard_high = sum(1 for i in hard_hits if i['severity'] == 'HIGH')
+        auth_pass = spf_status == 'PASS' and dkim_status == 'PASS' and dmarc_status == 'PASS'
+
+        # Severity-count floors — but only counting HARD evidence, so urgency
+        # language on a legitimate auth-passing email can't manufacture a verdict.
+        if hard_crit >= 2:
             raw_composite = max(raw_composite, 94.0)
-        elif critical_count == 1 and high_count >= 1:
-            raw_composite = max(raw_composite, 86.0)
-        elif critical_count == 1:
-            raw_composite = max(raw_composite, 75.0)
-        elif high_count >= 2:
-            raw_composite = max(raw_composite, 68.0)
+        elif hard_crit == 1 and hard_high >= 1:
+            raw_composite = max(raw_composite, 87.0)
+        elif hard_crit == 1:
+            raw_composite = max(raw_composite, 76.0)
+        elif hard_high >= 4:
+            raw_composite = max(raw_composite, 84.0)
+        elif hard_high >= 3:
+            raw_composite = max(raw_composite, 76.0)
+        elif hard_high >= 2:
+            raw_composite = max(raw_composite, 71.0)
+        elif hard_high == 1 and (med_count + high_count) >= 2:
+            raw_composite = max(raw_composite, 55.0)
+
+        # SPF *and* DMARC both failing alongside any other hard flag = near-certain.
+        auth_fail = (spf_status in ('FAIL', 'SOFTFAIL')) and (dmarc_status == 'FAIL')
+        if auth_fail and (hard_crit + hard_high) >= 2:
+            raw_composite = max(raw_composite, 80.0)
 
         risk_score = round(min(max(raw_composite, 0.0), 99.8), 1)
+
+        # Legitimacy dampener: a clean sender domain, no hard evidence at all, and
+        # SPF/DKIM/DMARC all passing — cap at the top of "suspicious". Urgency words
+        # alone (a bank fraud alert, an Amazon "order on hold") land here, not in
+        # the phishing band.
+        if auth_pass and hard_crit == 0 and hard_high == 0 and not domain_analysis['indicators']:
+            risk_score = min(risk_score, 32.0)
 
         # Optional LLM second opinion — only for borderline scores, only when
         # NVIDIA_API_KEY is set. It can raise concern, never lower it.

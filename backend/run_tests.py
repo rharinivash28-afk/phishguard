@@ -6,8 +6,8 @@ import runpy
 import sys
 
 MODULES = [
-    "test_analyzer", "test_sessions", "test_security", "test_detection",
-    "test_connection", "test_stix",
+    "test_analyzer", "test_accuracy", "test_sessions", "test_security",
+    "test_detection", "test_connection", "test_stix",
 ]
 
 failed = []
