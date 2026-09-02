@@ -89,9 +89,19 @@ class UserWorkspace:
 
         incident_id = None
         if is_quarantined:
-            report = CybercrimeIncidentReportGenerator.generate_report(analysis, email_data)
+            report = CybercrimeIncidentReportGenerator.generate_report(
+                analysis, email_data, workspace_id=self.session_id
+            )
             incident_id = report["incident_id"]
-            if self.db.get(IncidentReport, incident_id) is None:
+            existing = self.db.get(IncidentReport, incident_id)
+            if existing is None:
+                self.db.add(IncidentReport(
+                    incident_id=incident_id, session_id=self.session_id, payload=report,
+                ))
+            elif existing.session_id != self.session_id:
+                # extremely unlikely now (id is workspace-salted) but stay safe:
+                # never hand another workspace's row to this one
+                incident_id = f"{incident_id}-{uuid.uuid4().hex[:4].upper()}"
                 self.db.add(IncidentReport(
                     incident_id=incident_id, session_id=self.session_id, payload=report,
                 ))
@@ -139,6 +149,25 @@ class UserWorkspace:
     def analyze_only(self, email_data: Dict[str, Any]) -> Dict[str, Any]:
         """Score without persisting (used by the Deep Forensics workbench)."""
         return _engine.investigate(email_data)
+
+    def analyze_and_report(self, email_data: Dict[str, Any]):
+        """Score + build a cybercrime dossier, persisting it to this workspace's
+        report list so it also shows in the Reports tab. Returns (analysis, report)."""
+        analysis = _engine.investigate(email_data)
+        report = CybercrimeIncidentReportGenerator.generate_report(
+            analysis, email_data, workspace_id=self.session_id
+        )
+        incident_id = report["incident_id"]
+        existing = self.db.get(IncidentReport, incident_id)
+        if existing is None:
+            self.db.add(IncidentReport(
+                incident_id=incident_id, session_id=self.session_id, payload=report,
+            ))
+            self.db.commit()
+        elif existing.session_id == self.session_id:
+            existing.payload = report
+            self.db.commit()
+        return analysis, report
 
     # ------------------------------------------------------------------
     # reads

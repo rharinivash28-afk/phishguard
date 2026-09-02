@@ -5,13 +5,22 @@ from typing import Dict, Any, List
 
 class CybercrimeIncidentReportGenerator:
     @staticmethod
-    def generate_report(analysis_result: Dict[str, Any], email_raw_data: Dict[str, Any]) -> Dict[str, Any]:
+    def generate_report(
+        analysis_result: Dict[str, Any],
+        email_raw_data: Dict[str, Any],
+        workspace_id: str = "",
+    ) -> Dict[str, Any]:
         now = datetime.datetime.now(datetime.timezone.utc)
         timestamp_str = now.strftime("%Y-%m-%d %H:%M:%S UTC")
-        
-        # Generate reproducible Incident Reference ID
-        hash_input = f"{analysis_result.get('sender_address')}_{analysis_result.get('subject')}_{now.strftime('%Y%m%d')}"
-        incident_id = f"CC-INC-{now.strftime('%Y%m%d')}-{hashlib.md5(hash_input.encode()).hexdigest()[:6].upper()}"
+
+        # Incident Reference ID — reproducible for the same email within a workspace,
+        # but distinct across workspaces (the id is the DB primary key, so two
+        # sessions quarantining the same sample must not collide).
+        hash_input = (
+            f"{workspace_id}_{analysis_result.get('sender_address')}_"
+            f"{analysis_result.get('subject')}_{now.strftime('%Y%m%d')}"
+        )
+        incident_id = f"CC-INC-{now.strftime('%Y%m%d')}-{hashlib.md5(hash_input.encode()).hexdigest()[:8].upper()}"
         
         sender = analysis_result.get('sender_address', 'Unknown')
         domain = analysis_result.get('domain', 'Unknown')

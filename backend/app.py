@@ -229,9 +229,7 @@ def analyze_email(request: Request, payload: EmailInvestigationRequest, ws: User
 @limiter.limit("30/minute")
 def generate_report_endpoint(request: Request, payload: EmailInvestigationRequest, ws: UserWorkspace = Depends(workspace)):
     data = payload.model_dump()
-    analysis = ws.analyze_only(data)
-    from report_generator import CybercrimeIncidentReportGenerator
-    report = CybercrimeIncidentReportGenerator.generate_report(analysis, data)
+    analysis, report = ws.analyze_and_report(data)
     return {"report": report, "analysis": analysis}
 
 

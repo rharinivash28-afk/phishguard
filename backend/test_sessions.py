@@ -76,6 +76,41 @@ def test_two_sessions_are_isolated():
     assert len(b_sims) == 0, "session B can see session A's injected mail"
 
 
+def test_incident_report_reachable_after_simulate():
+    """The Report button 404 bug: a quarantined email's incident_id must resolve
+    to a dossier in the SAME session, even when another session already
+    quarantined the identical sample."""
+    a, b = _client(), _client()
+    # both quarantine the same PayPal sample
+    ia = a.post("/api/sentinel/simulate-incoming").json()["item"]
+    ib = b.post("/api/sentinel/simulate-incoming").json()["item"]
+    assert ia["incident_id"] and ib["incident_id"]
+    assert ia["incident_id"] != ib["incident_id"], "incident ids collide across sessions"
+    # each session can fetch its own dossier
+    ra = a.get(f"/api/sentinel/report/{ia['incident_id']}")
+    rb = b.get(f"/api/sentinel/report/{ib['incident_id']}")
+    assert ra.status_code == 200, f"session A got {ra.status_code} for its own report"
+    assert rb.status_code == 200, f"session B got {rb.status_code} for its own report"
+    assert ra.json()["report"]["stix_bundle"]["type"] == "bundle"
+    # and each session's reports list has exactly one
+    assert len(a.get("/api/sentinel/reports").json()["reports"]) == 1
+    assert len(b.get("/api/sentinel/reports").json()["reports"]) == 1
+    # cross access is denied
+    assert a.get(f"/api/sentinel/report/{ib['incident_id']}").status_code == 404
+
+
+def test_generate_report_endpoint_persists_to_reports_tab():
+    c = _client()
+    c.post("/api/generate-report", json={
+        "sender_address": "security@paypa1-verify.xyz", "display_name": "PayPal",
+        "subject": "Urgent: verify within 24 hours", "body": "http://paypa1-verify.xyz/login",
+        "spf_status": "FAIL", "dkim_status": "FAIL", "dmarc_status": "FAIL",
+    })
+    reports = c.get("/api/sentinel/reports").json()["reports"]
+    assert len(reports) == 1, "Deep Forensics report did not land in the Reports tab"
+    assert reports[0]["stix_bundle"]
+
+
 def test_anonymous_caller_gets_fresh_workspace():
     a = _client()
     a.post("/api/sentinel/simulate-incoming")
