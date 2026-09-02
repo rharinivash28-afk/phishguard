@@ -320,6 +320,41 @@ export default function App() {
     }
   };
 
+  // Refresh button: when Gmail is connected, actually poll it for new mail;
+  // otherwise just re-sync workspace state. Returns { newCount } so the button
+  // can animate a result.
+  const handleSmartRefresh = async () => {
+    try {
+      if (gmailConnected) {
+        const res = await api('/api/sentinel/scan-now', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const data = await res.json().catch(() => ({}));
+        const r = data.result || {};
+        if (r.status === 'EXPIRED') {
+          showNotification('Gmail session expired', 'info');
+          await fetchConnectionStatus();
+          await fetchData();
+          return { newCount: 0, expired: true };
+        }
+        if (r.status === 'TRANSIENT') {
+          showNotification('Temporary network issue — connection kept, retrying', 'info');
+          await fetchData();
+          return { newCount: 0, transient: true };
+        }
+        const n = r.new_emails_found ?? 0;
+        await fetchData();
+        return { newCount: n };
+      }
+      await fetchData();
+      return { newCount: 0 };
+    } catch (err) {
+      console.error(err);
+      return { newCount: 0, error: true };
+    }
+  };
+
   const handleWipeWorkspace = async () => {
     try {
       await api('/api/session/wipe', { method: 'POST' });
@@ -378,7 +413,7 @@ export default function App() {
             inbox={inbox}
             stats={stats}
             gmailConnected={gmailConnected}
-            onRefresh={fetchData}
+            onRefresh={handleSmartRefresh}
             onQuarantineToggle={handleQuarantineToggle}
             onInspectEmail={handleInspectEmail}
             onViewReport={handleViewReport}

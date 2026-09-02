@@ -29,6 +29,29 @@ export default function LiveSentinel({
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
 
+  // Refresh button animation state: 'idle' | 'spinning' | 'found' | 'empty'
+  const [refreshState, setRefreshState] = useState('idle');
+  const [newCount, setNewCount] = useState(0);
+  const refreshTimer = useRef(null);
+
+  const handleRefreshClick = async () => {
+    if (refreshState === 'spinning') return;
+    clearTimeout(refreshTimer.current);
+    setRefreshState('spinning');
+    let result = { newCount: 0 };
+    try {
+      result = (await onRefresh?.()) || { newCount: 0 };
+    } catch {
+      /* onRefresh already logs */
+    }
+    const n = result.newCount || 0;
+    setNewCount(n);
+    setRefreshState(n > 0 ? 'found' : 'empty');
+    refreshTimer.current = setTimeout(() => setRefreshState('idle'), n > 0 ? 2600 : 1400);
+  };
+
+  React.useEffect(() => () => clearTimeout(refreshTimer.current), []);
+
   const filteredItems = (inbox || []).filter(item => {
     const matchesSearch =
       item.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -207,8 +230,31 @@ export default function LiveSentinel({
               <input type="text" placeholder="Search sender, subject…" value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)} className="glass-input pl-9" />
             </div>
-            <button onClick={onRefresh} title="Refresh" className="p-2 rounded-lg glass-soft text-white/70 hover:text-white hover:bg-white/[0.1] transition">
-              <RefreshCw className="w-4 h-4" />
+            <button
+              onClick={handleRefreshClick}
+              disabled={refreshState === 'spinning'}
+              title={
+                refreshState === 'spinning' ? 'Checking for new email…'
+                : refreshState === 'found' ? `${newCount} new email${newCount > 1 ? 's' : ''}`
+                : refreshState === 'empty' ? 'Inbox up to date'
+                : 'Refresh — check for new email'
+              }
+              className={`relative p-2 rounded-lg glass-soft transition-colors duration-300 ${
+                refreshState === 'found'
+                  ? 'text-emerald-300 bg-emerald-400/15 ring-1 ring-emerald-400/40'
+                  : refreshState === 'empty'
+                  ? 'text-white bg-white/[0.12]'
+                  : 'text-white/70 hover:text-white hover:bg-white/[0.1]'
+              }`}
+            >
+              {refreshState === 'found'
+                ? <CheckCircle2 className="w-4 h-4 refresh-pop" />
+                : <RefreshCw className={`w-4 h-4 ${refreshState === 'spinning' ? 'refresh-spin' : ''}`} />}
+              {refreshState === 'found' && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-emerald-400 text-[10px] font-bold text-black flex items-center justify-center refresh-pop">
+                  {newCount}
+                </span>
+              )}
             </button>
             <button onClick={onSimulateAttack} className="btn-ghost">
               <Zap className="w-3.5 h-3.5" />

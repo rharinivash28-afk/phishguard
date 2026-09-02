@@ -206,3 +206,22 @@
   background: rgba(255, 255, 255, 0.28);
   background-clip: content-box;
 }
+
+/* Refresh button feedback --------------------------------- */
+@keyframes refresh-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+/* one brisk spin per ~0.7s while a check is in flight */
+.refresh-spin {
+  animation: refresh-spin 0.7s cubic-bezier(0.4, 0.1, 0.2, 1) infinite;
+}
+
+@keyframes refresh-pop {
+  0%   { transform: scale(0.4); opacity: 0; }
+  55%  { transform: scale(1.18); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.refresh-pop {
+  animation: refresh-pop 0.34s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
